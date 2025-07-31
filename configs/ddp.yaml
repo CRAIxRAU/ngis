@@ -1,0 +1,93 @@
+# NGIS Distributed Training Configuration
+
+# Data configuration
+data:
+  data_path: "data/"
+  batch_size: 16  # Smaller batch size for distributed training
+  num_workers: 2  # Fewer workers per process
+  segment_length: 1000
+  overlap: 0.0
+  sampling_rate: 1000.0
+  channels: null
+  preprocess: true
+  augment: true
+
+# Model configuration
+model:
+  n_channels: 128
+  n_neurons: 256
+  n_layers: 3
+  hidden_dim: 64
+  graph_type: "functional"
+  connectivity_threshold: 0.1
+  dropout: 0.1
+  lif_params:
+    tau_m: 20.0
+    v_rest: -65.0
+    v_threshold: -55.0
+    v_reset: -65.0
+    refractory_period: 2.0
+  synapse_params:
+    tau_s: 5.0
+    weight_scale: 1.0
+    plasticity: true
+  readout_params:
+    readout_type: "linear"
+    activation: "tanh"
+
+# Training configuration
+training:
+  epochs: 100
+  learning_rate: 0.001
+  batch_size: 16  # Per-GPU batch size
+  output_dir: "outputs/"
+  save_frequency: 10
+  log_frequency: 100
+  early_stopping_patience: 10
+  gradient_clip: 1.0
+
+# Loss function configuration
+loss:
+  eeg_weight: 1.0
+  spiking_weight: 0.1
+  biological_weight: 0.01
+  regularization_weight: 0.001
+
+# Optimizer configuration
+optimizer:
+  type: "adam"
+  learning_rate: 0.001
+  weight_decay: 0.0
+  beta1: 0.9
+  beta2: 0.999
+  eps: 1e-8
+
+# Scheduler configuration
+scheduler:
+  type: "reduce_lr_on_plateau"
+  params:
+    mode: "min"
+    factor: 0.5
+    patience: 5
+    min_lr: 1e-6
+
+# Checkpointing configuration
+checkpointing:
+  save_dir: "checkpoints/"
+  save_frequency: 10
+  max_checkpoints: 5
+
+# Logging configuration
+logging:
+  level: "INFO"
+  log_frequency: 100
+  tensorboard: true
+  wandb: false
+  wandb_project: "ngis"
+
+# Distributed training configuration
+distributed:
+  backend: "nccl"
+  init_method: "tcp://localhost:10001"
+  world_size: 4
+  rank: 0 
