@@ -2,13 +2,16 @@
 
 # Data configuration
 data:
-  data_path: "data/"
+  data_path: "data/processed"  # Updated to use processed data
+  raw_data_path: "data/raw"    # Raw 256-channel data
   batch_size: 32
   num_workers: 4
   segment_length: 1000
   overlap: 0.0
   sampling_rate: 1000.0
-  channels: null  # Use all channels
+  channels: 128  # Target channel count after selection
+  original_channels: 256  # Original channel count
+  channel_selection_strategy: "uniform_spatial"
   preprocess: true
   augment: true
 
