@@ -79,16 +79,22 @@ class Synapse(nn.Module):
         
         logger.info(f"Initialized synapses: {n_neurons}x{n_neurons} connections")
     
-    def reset_state(self):
+    def reset_state(self, device: Optional[torch.device] = None):
         """Reset synaptic state variables."""
+        target_device = device or self.weights.device
+
         # Synaptic current
-        self.synaptic_current = torch.zeros(self.n_neurons)
-        
+        self.synaptic_current = torch.zeros(self.n_neurons, device=target_device)
+
         # Spike history for plasticity
-        self.spike_history = torch.zeros(self.n_neurons)
-        
+        self.spike_history = torch.zeros(self.n_neurons, device=target_device)
+
         # Weight update history
-        self.weight_updates = torch.zeros(self.n_neurons, self.n_neurons)
+        self.weight_updates = torch.zeros(
+            self.n_neurons,
+            self.n_neurons,
+            device=target_device
+        )
     
     def forward(
         self,
@@ -172,15 +178,15 @@ class Synapse(nn.Module):
         # STDP rule: LTP for positive correlations, LTD for negative
         weight_updates = self.learning_rate * spike_correlations
         
-        # Apply weight updates
-        self.weights = self.weights + weight_updates
-        
+        # Apply weight updates in-place to preserve parameter object
+        self.weights.data.add_(weight_updates)
+
         # Apply weight constraints
-        self.weights = torch.clamp(self.weights, self.min_weight, self.max_weight)
-        
+        self.weights.data.clamp_(self.min_weight, self.max_weight)
+
         # Apply weight decay
         if self.weight_decay > 0:
-            self.weights = self.weights * (1 - self.weight_decay)
+            self.weights.data.mul_(1 - self.weight_decay)
         
         # Update spike history
         self.spike_history = spikes.clone()

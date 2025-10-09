@@ -134,31 +134,39 @@ class EEGReadout(nn.Module):
         Returns:
             Dictionary containing EEG output and optional attention weights.
         """
-        batch_size, n_neurons, seq_len = spike_trains.shape
-        
-        # Aggregate spike trains over time
-        spike_features = self._aggregate_spikes(spike_trains)
-        
-        # Apply readout
         if self.readout_type == "linear":
-            eeg_output = self._linear_readout(spike_features)
-        elif self.readout_type == "mlp":
+            eeg_output = self._linear_time_series_readout(spike_trains)
+            eeg_output = self._apply_activation(eeg_output)
+            return {'eeg_output': eeg_output}
+
+        # Aggregate spike trains over time for other readout types
+        spike_features = self._aggregate_spikes(spike_trains)
+
+        if self.readout_type == "mlp":
             eeg_output = self._mlp_readout(spike_features)
         elif self.readout_type == "attention":
             eeg_output, attention_weights = self._attention_readout(spike_features)
         else:
             raise ValueError(f"Unknown readout type: {self.readout_type}")
-        
-        # Apply activation function
+
         eeg_output = self._apply_activation(eeg_output)
-        
-        # Prepare output
+
         output = {'eeg_output': eeg_output}
-        
+
         if self.readout_type == "attention" and return_attention:
             output['attention_weights'] = attention_weights
-        
+
         return output
+
+    def _linear_time_series_readout(self, spike_trains: torch.Tensor) -> torch.Tensor:
+        """Apply linear readout that preserves the temporal dimension."""
+        batch_size, n_neurons, seq_len = spike_trains.shape
+
+        spikes = spike_trains.permute(0, 2, 1).reshape(batch_size * seq_len, n_neurons)
+        eeg = F.linear(spikes, self.readout_layer.weight, self.readout_layer.bias)
+        eeg = eeg.view(batch_size, seq_len, self.n_channels).permute(0, 2, 1)
+
+        return eeg
     
     def _aggregate_spikes(self, spike_trains: torch.Tensor) -> torch.Tensor:
         """

@@ -121,9 +121,9 @@ class NGISTrainer:
     def _init_scheduler(self):
         """Initialize learning rate scheduler."""
         scheduler_config = self.config.scheduler
-        
+
         self.scheduler = NGISScheduler(
-            optimizer=self.optimizer,
+            optimizer=self.optimizer.optimizer,  # Pass the actual PyTorch optimizer
             scheduler_type=scheduler_config.type,
             **scheduler_config.params
         )

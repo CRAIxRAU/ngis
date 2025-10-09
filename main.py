@@ -111,9 +111,7 @@ def parse_args():
 
 def load_config(config_path: str) -> Config:
     """Load configuration from YAML file."""
-    with open(config_path, 'r') as f:
-        config_dict = yaml.safe_load(f)
-    return Config(config_dict)
+    return Config.from_yaml(config_path)
 
 
 def setup_distributed(args):

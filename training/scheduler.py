@@ -32,14 +32,15 @@ class NGISScheduler:
     def _create_scheduler(self, optimizer, **kwargs):
         """Create scheduler based on type."""
         if self.scheduler_type == "reduce_lr_on_plateau":
-            return lr_scheduler.ReduceLROnPlateau(
-                optimizer,
-                mode='min',
-                factor=0.5,
-                patience=5,
-                min_lr=1e-6,
-                **kwargs
-            )
+            # Set defaults, allow kwargs to override
+            params = {
+                'mode': 'min',
+                'factor': 0.5,
+                'patience': 5,
+                'min_lr': 1e-6
+            }
+            params.update(kwargs)
+            return lr_scheduler.ReduceLROnPlateau(optimizer, **params)
         elif self.scheduler_type == "cosine":
             return lr_scheduler.CosineAnnealingLR(
                 optimizer,
