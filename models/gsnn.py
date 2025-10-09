@@ -74,7 +74,9 @@ class GSNN(nn.Module):
         self._init_synapses(synapse_params)
         self._init_graph_layers()
         self._init_readout(readout_params)
-        
+
+        self.node_to_neuron = nn.Linear(self.n_channels, self.n_neurons)
+
         logger.info(f"Initialized G-SNN with {n_neurons} neurons and {n_layers} layers")
     
     def _init_graph_constructor(self):
@@ -120,8 +122,8 @@ class GSNN(nn.Module):
         """Initialize graph convolution layers."""
         self.graph_layers = nn.ModuleList()
         
-        # Input projection
-        self.input_projection = nn.Linear(self.n_channels, self.hidden_dim)
+        # Input projection (graph constructor outputs 64-dim node features)
+        self.input_projection = nn.Linear(64, self.hidden_dim)
         
         # Graph convolution layers
         for i in range(self.n_layers):
@@ -141,7 +143,7 @@ class GSNN(nn.Module):
             self.graph_layers.append(conv_layer)
         
         # Output projection
-        self.output_projection = nn.Linear(self.hidden_dim, self.n_neurons)
+        self.output_projection = nn.Linear(self.hidden_dim, self.hidden_dim)
     
     def _init_readout(self, readout_params: Optional[Dict] = None):
         """Initialize EEG readout layer."""
@@ -183,14 +185,15 @@ class GSNN(nn.Module):
             graph_data = self.graph_constructor(eeg_input)
         
         # Process through graph layers
-        x = self._process_graph_layers(graph_data)
-        
+        neuron_currents = self._process_graph_layers(graph_data, seq_len)
+
         # Simulate spiking dynamics
-        spike_trains, membrane_potentials = self._simulate_spiking(x, seq_len)
+        spike_trains, membrane_potentials = self._simulate_spiking(neuron_currents)
         
         # Readout to EEG
-        eeg_output = self.readout(spike_trains)
-        
+        readout_outputs = self.readout(spike_trains)
+        eeg_output = readout_outputs['eeg_output']
+
         # Prepare output
         output = {
             'eeg_output': eeg_output,
@@ -198,61 +201,82 @@ class GSNN(nn.Module):
             'membrane_potentials': membrane_potentials if return_spikes else None,
             'graph_data': graph_data if return_graph else None
         }
-        
+
+        # Include any additional readout artifacts (e.g., attention weights)
+        for key, value in readout_outputs.items():
+            if key != 'eeg_output':
+                output[key] = value
+
         return output
     
-    def _process_graph_layers(self, graph_data: Data) -> torch.Tensor:
-        """Process data through graph convolution layers."""
+    def _process_graph_layers(self, graph_data: Union[Data, Batch], seq_len: int) -> torch.Tensor:
+        """Process data through graph convolution layers and prepare neuron currents."""
         x = graph_data.x
-        
+        edge_index = graph_data.edge_index
+        batch = getattr(graph_data, "batch", None)
+
+        if batch is None:
+            batch = torch.zeros(x.size(0), dtype=torch.long, device=x.device)
+
         # Input projection
         x = self.input_projection(x)
         x = F.relu(x)
         x = F.dropout(x, p=self.dropout, training=self.training)
-        
-        # Graph convolution layers
+
         for i, conv_layer in enumerate(self.graph_layers):
-            x = conv_layer(x, graph_data.edge_index)
+            x = conv_layer(x, edge_index)
             if i < len(self.graph_layers) - 1:
                 x = F.relu(x)
                 x = F.dropout(x, p=self.dropout, training=self.training)
-        
-        # Output projection
+
         x = self.output_projection(x)
-        
-        return x
-    
+
+        batch_size = int(batch.max().item()) + 1
+        node_embeddings = x.view(batch_size, self.n_channels, self.hidden_dim)
+
+        # Map channel-wise embeddings to neuron space
+        neuron_embeddings = self.node_to_neuron(
+            node_embeddings.permute(0, 2, 1)
+        )  # (batch, hidden_dim, n_neurons)
+        neuron_embeddings = neuron_embeddings.permute(0, 2, 1)
+
+        # Interpolate embeddings across time to create input currents
+        neuron_currents = torch.nn.functional.interpolate(
+            neuron_embeddings,
+            size=seq_len,
+            mode="linear",
+            align_corners=False
+        )
+
+        return neuron_currents
+
     def _simulate_spiking(
         self,
-        x: torch.Tensor,
-        seq_len: int
+        neuron_currents: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """Simulate spiking dynamics using LIF neurons."""
-        batch_size = x.shape[0] // self.n_neurons
-        
-        # Reshape for neuron processing
-        x = x.view(batch_size, self.n_neurons, -1)
-        
-        # Initialize spike trains and membrane potentials
-        spike_trains = torch.zeros(batch_size, self.n_neurons, seq_len)
-        membrane_potentials = torch.zeros(batch_size, self.n_neurons, seq_len)
-        
-        # Simulate for each time step
-        for t in range(seq_len):
-            # Get current input
-            current_input = x[:, :, t] if t < x.shape[2] else torch.zeros_like(x[:, :, 0])
-            
-            # Update LIF neurons
-            spikes, membrane = self.lif_neurons(current_input)
-            
-            # Apply synaptic dynamics
-            if hasattr(self, 'synapses'):
-                spikes = self.synapses(spikes)
-            
-            # Store results
-            spike_trains[:, :, t] = spikes
-            membrane_potentials[:, :, t] = membrane
-        
+        batch_size, n_neurons, seq_len = neuron_currents.shape
+
+        spike_trains = torch.zeros_like(neuron_currents)
+        membrane_potentials = torch.zeros_like(neuron_currents)
+
+        for b in range(batch_size):
+            self.lif_neurons.reset_state(device=neuron_currents.device)
+            if hasattr(self, "synapses"):
+                self.synapses.reset_state(device=neuron_currents.device)
+
+            for t in range(seq_len):
+                current_input = neuron_currents[b:b + 1, :, t]
+                spikes, membrane = self.lif_neurons(current_input)
+
+                if hasattr(self, "synapses"):
+                    filtered_spikes, _ = self.synapses(spikes)
+                else:
+                    filtered_spikes = spikes
+
+                spike_trains[b, :, t] = filtered_spikes.squeeze(0)
+                membrane_potentials[b, :, t] = membrane.squeeze(0)
+
         return spike_trains, membrane_potentials
     
     def get_graph_structure(self) -> Data:

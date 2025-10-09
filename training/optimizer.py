@@ -64,18 +64,23 @@ class NGISOptimizer:
         else:
             raise ValueError(f"Unknown optimizer type: {self.optimizer_type}")
     
+    @property
+    def param_groups(self):
+        """Expose param_groups from the underlying optimizer."""
+        return self.optimizer.param_groups
+
     def zero_grad(self):
         """Zero gradients."""
         self.optimizer.zero_grad()
-    
+
     def step(self):
         """Perform optimization step."""
         self.optimizer.step()
-    
+
     def state_dict(self):
         """Get optimizer state."""
         return self.optimizer.state_dict()
-    
+
     def load_state_dict(self, state_dict):
         """Load optimizer state."""
         self.optimizer.load_state_dict(state_dict)

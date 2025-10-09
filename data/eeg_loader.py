@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Tuple, Union
 import mne
 import numpy as np
 import pandas as pd
-from mne.io import read_raw_edf, read_raw_bdf, read_raw_fif, read_raw_brainvision
+from mne.io import read_raw_edf, read_raw_bdf, read_raw_fif, read_raw_brainvision, read_raw_eeglab
 
 from .channel_selection import ChannelSelector
 
@@ -95,6 +95,8 @@ class EEGLoader:
                 raw = read_raw_fif(file_path, preload=self.preload)
             elif file_ext == '.vhdr':
                 raw = read_raw_brainvision(file_path, preload=self.preload)
+            elif file_ext == '.set':
+                raw = read_raw_eeglab(file_path, preload=self.preload)
             else:
                 # For other formats, try MNE's generic reader
                 raw = mne.io.read_raw(file_path, preload=self.preload)
@@ -129,8 +131,8 @@ class EEGLoader:
         if self.sampling_rate is not None and self.sampling_rate != raw.info['sfreq']:
             logger.info(f"Resampling from {raw.info['sfreq']}Hz to {self.sampling_rate}Hz")
             raw.resample(self.sampling_rate)
-        
-        logger.info(f"Loaded EEG data: {len(raw.times)} samples, {len(raw.ch_names)} channels")
+
+        logger.info(f"Loaded EEG data: {raw.n_times} samples, {len(raw.ch_names)} channels")
         return raw
     
     def load_electrode_positions_from_bids(self, electrodes_file: Union[str, Path]) -> Dict[str, Tuple[float, float, float]]:
@@ -221,7 +223,7 @@ class EEGLoader:
             Dictionary containing EEG metadata.
         """
         info = {
-            'n_channels': raw.n_channels,
+            'n_channels': len(raw.ch_names),
             'n_samples': raw.n_times,
             'sampling_rate': raw.info['sfreq'],
             'duration': raw.n_times / raw.info['sfreq'],
@@ -246,8 +248,9 @@ class EEGLoader:
             return False
         
         # Check for reasonable number of channels
-        if raw.n_channels < 16 or raw.n_channels > 256:
-            logger.warning(f"Unusual number of channels: {raw.n_channels}")
+        n_channels = len(raw.ch_names)
+        if n_channels < 16 or n_channels > 256:
+            logger.warning(f"Unusual number of channels: {n_channels}")
             return False
         
         # Check for reasonable duration

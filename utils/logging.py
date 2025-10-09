@@ -41,9 +41,12 @@ def setup_logging(
     log_path.mkdir(parents=True, exist_ok=True)
     
     # Configure logging level
-    numeric_level = getattr(logging, level.upper(), None)
-    if not isinstance(numeric_level, int):
-        raise ValueError(f"Invalid log level: {level}")
+    if isinstance(level, int):
+        numeric_level = level
+    else:
+        numeric_level = getattr(logging, level.upper(), None)
+        if not isinstance(numeric_level, int):
+            raise ValueError(f"Invalid log level: {level}")
     
     # Create logger
     logger = logging.getLogger("ngis")

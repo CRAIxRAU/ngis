@@ -74,16 +74,22 @@ class LIFNeuron(nn.Module):
         
         logger.info(f"Initialized LIF neurons: {n_neurons} neurons")
     
-    def reset_state(self):
+    def reset_state(self, device: Optional[torch.device] = None):
         """Reset neuron state variables."""
+        target_device = device or self.v_rest.device
+
         # Membrane potential
-        self.v = self.v_rest.clone().expand(self.n_neurons)
-        
+        self.v = self.v_rest.detach().clone().to(target_device).expand(self.n_neurons)
+
         # Refractory counter
-        self.refractory_counter = torch.zeros(self.n_neurons)
-        
+        self.refractory_counter = torch.zeros(self.n_neurons, device=target_device)
+
         # Spike history
-        self.last_spike_time = torch.full((self.n_neurons,), -float('inf'))
+        self.last_spike_time = torch.full(
+            (self.n_neurons,),
+            -float('inf'),
+            device=target_device
+        )
     
     def forward(
         self,
@@ -176,7 +182,7 @@ class LIFNeuron(nn.Module):
         # Update last spike time
         self.last_spike_time = torch.where(
             spike_mask,
-            torch.tensor(0.0),  # Current time
+            torch.zeros((), device=self.last_spike_time.device),
             self.last_spike_time
         )
         

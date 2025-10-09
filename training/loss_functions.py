@@ -83,7 +83,7 @@ class CombinedLoss(nn.Module):
         simulated_eeg: torch.Tensor,
         spike_trains: torch.Tensor,
         graph_data,
-        model
+        model = None
     ) -> torch.Tensor:
         """Calculate combined loss."""
         # EEG reconstruction loss
@@ -93,10 +93,10 @@ class CombinedLoss(nn.Module):
         spiking_loss = self.spiking_loss(spike_trains)
         
         # Biological constraints loss
-        biological_loss = self.biological_loss(model)
+        biological_loss = self.biological_loss(model) if model is not None else torch.tensor(0.0, device=real_eeg.device)
         
         # Regularization loss
-        regularization_loss = self._calculate_regularization(model)
+        regularization_loss = self._calculate_regularization(model, real_eeg.device)
         
         # Combined loss
         total_loss = (
@@ -108,8 +108,10 @@ class CombinedLoss(nn.Module):
         
         return total_loss
     
-    def _calculate_regularization(self, model) -> torch.Tensor:
+    def _calculate_regularization(self, model, device: torch.device) -> torch.Tensor:
         """Calculate regularization loss."""
+        if model is None:
+            return torch.tensor(0.0, device=device)
         l2_loss = 0.0
         for param in model.parameters():
             l2_loss += torch.norm(param, p=2)
