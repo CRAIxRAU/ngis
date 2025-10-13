@@ -1,10 +1,22 @@
 # Core ML and Deep Learning
-torch>=2.0.0
+# NOTE: Install PyTorch first with CUDA support from https://pytorch.org
+# For CUDA 12.1: pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+torch>=2.5.0
+torchvision>=0.20.0
+torchaudio>=2.5.0
+
+# PyTorch Geometric and Extensions
+# NOTE: These must be installed AFTER PyTorch with matching CUDA version
+# See install_pyg_extensions.sh for automated installation
 torch-geometric>=2.3.0
-torch-scatter>=2.1.0
-torch-sparse>=0.6.0
-torch-cluster>=1.6.0
-torch-spline-conv>=1.2.0
+
+# PyTorch Geometric CUDA Extensions
+# These are installed separately - DO NOT pip install directly
+# Use: bash install_pyg_extensions.sh
+# torch-scatter  # Installed via script
+# torch-sparse   # Installed via script
+# torch-cluster  # Installed via script
+# torch-spline-conv  # Installed via script
 
 # Scientific Computing
 numpy>=1.21.0

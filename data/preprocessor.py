@@ -147,12 +147,13 @@ class EEGPreprocessor:
     def _remove_artifacts(self, raw: mne.io.Raw) -> mne.io.Raw:
         """Remove artifacts using statistical methods."""
         logger.info("Removing artifacts...")
-        
+
         data = raw.get_data()
         n_channels, n_samples = data.shape
-        
-        # Calculate z-scores for each channel
-        z_scores = np.abs(zscore(data, axis=1))
+
+        # Calculate z-scores for each channel (handle constant channels)
+        z_scores = np.abs(zscore(data, axis=1, nan_policy='propagate'))
+        z_scores = np.nan_to_num(z_scores, nan=0.0, posinf=0.0, neginf=0.0)
         
         # Find samples that exceed threshold in any channel
         artifact_mask = np.any(z_scores > self.artifact_threshold, axis=0)
@@ -180,15 +181,16 @@ class EEGPreprocessor:
     def _normalize_data(self, raw: mne.io.Raw) -> mne.io.Raw:
         """Normalize EEG data."""
         logger.info("Normalizing EEG data...")
-        
+
         data = raw.get_data()
-        
-        # Z-score normalization per channel
-        data_normalized = zscore(data, axis=1)
-        
+
+        # Z-score normalization per channel (handle constant channels)
+        data_normalized = zscore(data, axis=1, nan_policy='propagate')
+        data_normalized = np.nan_to_num(data_normalized, nan=0.0, posinf=0.0, neginf=0.0)
+
         # Update the raw object
         raw._data = data_normalized
-        
+
         return raw
     
     def segment_data(

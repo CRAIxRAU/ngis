@@ -15,6 +15,7 @@ import yaml
 from rich.console import Console
 from rich.logging import RichHandler
 
+from data.dataloader import create_training_dataloader
 from training.trainer import NGISTrainer
 from utils.config import Config
 from utils.logging import setup_logging
@@ -133,7 +134,7 @@ def main():
     
     # Setup logging
     setup_logging(level=logging.DEBUG if args.debug else logging.INFO)
-    logger = logging.getLogger(__name__)
+    logger = logging.getLogger("ngis")
     
     # Load configuration
     try:
@@ -184,7 +185,52 @@ def main():
     except Exception as e:
         logger.error(f"Failed to initialize trainer: {e}")
         sys.exit(1)
-    
+
+    # Create dataloaders
+    try:
+        logger.info("Creating dataloaders...")
+
+        # Get optional max_duration for fast testing
+        max_duration = getattr(config.data, 'max_duration', None)
+
+        train_dataloader = create_training_dataloader(
+            data_path=config.data.data_path,
+            batch_size=config.data.batch_size,
+            segment_length=config.data.segment_length,
+            overlap=config.data.overlap,
+            augment=config.data.augment,
+            num_workers=config.data.num_workers,
+            distributed=is_distributed,
+            rank=args.rank,
+            world_size=args.world_size,
+            channel_selection_strategy=config.data.channel_selection_strategy,
+            target_channels=config.data.channels,
+            max_duration=max_duration
+        )
+
+        # For validation, use same dataloader but without augmentation
+        val_dataloader = create_training_dataloader(
+            data_path=config.data.data_path,
+            batch_size=config.data.batch_size,
+            segment_length=config.data.segment_length,
+            overlap=config.data.overlap,
+            augment=False,  # No augmentation for validation
+            num_workers=config.data.num_workers,
+            distributed=is_distributed,
+            rank=args.rank,
+            world_size=args.world_size,
+            channel_selection_strategy=config.data.channel_selection_strategy,
+            target_channels=config.data.channels,
+            max_duration=max_duration
+        )
+
+        # Set dataloaders on trainer
+        trainer.set_dataloaders(train_dataloader, val_dataloader)
+        logger.info(f"Created dataloaders: {len(train_dataloader)} train batches, {len(val_dataloader)} val batches")
+    except Exception as e:
+        logger.error(f"Failed to create dataloaders: {e}")
+        sys.exit(1)
+
     # Dry run check
     if args.dry_run:
         logger.info("Dry run mode - exiting without training")

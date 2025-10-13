@@ -37,11 +37,14 @@ class EEGDataset(Dataset):
         augment: bool = False,
         channels: Optional[List[str]] = None,
         sampling_rate: float = 1000.0,
+        channel_selection_strategy: Optional[str] = None,
+        target_channels: int = 128,
+        max_duration: Optional[float] = None,
         **preprocessor_kwargs
     ):
         """
         Initialize EEG dataset.
-        
+
         Args:
             data_path: Path to EEG file(s) or directory.
             segment_length: Length of each segment in samples.
@@ -50,6 +53,7 @@ class EEGDataset(Dataset):
             augment: Whether to apply data augmentation.
             channels: List of channel names to use.
             sampling_rate: Target sampling rate.
+            max_duration: Maximum duration in seconds to load (for fast testing).
             **preprocessor_kwargs: Additional arguments for preprocessor.
         """
         self.segment_length = segment_length
@@ -57,11 +61,14 @@ class EEGDataset(Dataset):
         self.preprocess = preprocess
         self.augment = augment
         self.sampling_rate = sampling_rate
-        
+
         # Initialize loader and preprocessor
         self.loader = EEGLoader(
             channels=channels,
-            sampling_rate=sampling_rate
+            sampling_rate=sampling_rate,
+            channel_selection_strategy=channel_selection_strategy,
+            target_channels=target_channels,
+            max_duration=max_duration
         )
         
         self.preprocessor = EEGPreprocessor(
@@ -138,14 +145,19 @@ class EEGDataset(Dataset):
         """Get EEG segment at index."""
         segment = self.segments[idx]
         info = self.segment_info[idx]
-        
+
         # Convert to torch tensor
         segment_tensor = torch.from_numpy(segment).float()
-        
+
+        # Handle NaN values from preprocessing (filter edge effects)
+        if torch.isnan(segment_tensor).any():
+            segment_tensor = torch.nan_to_num(segment_tensor, nan=0.0)
+            logger.debug(f"Replaced NaN values in segment {idx}")
+
         # Apply augmentation if requested
         if self.augment and self.training:
             segment_tensor = self._augment_segment(segment_tensor)
-        
+
         return {
             'eeg': segment_tensor,
             'info': info
