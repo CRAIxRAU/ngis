@@ -34,11 +34,12 @@ class EEGLoader:
         preload: bool = True,
         channel_selection_strategy: Optional[str] = None,
         target_channels: int = 128,
-        electrode_positions: Optional[Dict[str, Tuple[float, float, float]]] = None
+        electrode_positions: Optional[Dict[str, Tuple[float, float, float]]] = None,
+        max_duration: Optional[float] = None
     ):
         """
         Initialize EEG loader.
-        
+
         Args:
             channels: List of channel names to load. If None, loads all channels.
             sampling_rate: Target sampling rate. If None, keeps original rate.
@@ -46,6 +47,7 @@ class EEGLoader:
             channel_selection_strategy: Strategy for channel selection ('uniform_spatial', 'standard_hd', 'roi_based', 'custom')
             target_channels: Number of channels to select (default: 128)
             electrode_positions: Dictionary of electrode positions for spatial strategies
+            max_duration: Maximum duration in seconds to load (for fast testing)
         """
         self.channels = channels
         self.sampling_rate = sampling_rate
@@ -53,8 +55,9 @@ class EEGLoader:
         self.channel_selection_strategy = channel_selection_strategy
         self.target_channels = target_channels
         self.electrode_positions = electrode_positions
+        self.max_duration = max_duration
         self.supported_formats = ['.edf', '.bdf', '.fif', '.set', '.cnt', '.vhdr']
-        
+
         # Initialize channel selector if strategy is provided
         self.channel_selector = None
         if channel_selection_strategy:
@@ -131,6 +134,13 @@ class EEGLoader:
         if self.sampling_rate is not None and self.sampling_rate != raw.info['sfreq']:
             logger.info(f"Resampling from {raw.info['sfreq']}Hz to {self.sampling_rate}Hz")
             raw.resample(self.sampling_rate)
+
+        # Crop to max_duration if specified (for fast testing)
+        if self.max_duration is not None:
+            duration_sec = raw.n_times / raw.info['sfreq']
+            if duration_sec > self.max_duration:
+                logger.info(f"Cropping data from {duration_sec:.1f}s to {self.max_duration:.1f}s")
+                raw.crop(tmax=self.max_duration)
 
         logger.info(f"Loaded EEG data: {raw.n_times} samples, {len(raw.ch_names)} channels")
         return raw

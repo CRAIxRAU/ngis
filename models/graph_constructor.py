@@ -219,10 +219,13 @@ class GraphConstructor(nn.Module):
         """Compute correlation matrix."""
         # Convert to numpy for correlation computation
         eeg_np = eeg_data.detach().cpu().numpy()
-        
-        # Compute correlation matrix
-        correlation_matrix = np.corrcoef(eeg_np)
-        
+
+        # Compute correlation matrix (handle constant channels)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            correlation_matrix = np.corrcoef(eeg_np)
+        # Replace NaN/Inf with 0
+        correlation_matrix = np.nan_to_num(correlation_matrix, nan=0.0, posinf=0.0, neginf=0.0)
+
         # Convert back to torch
         return torch.from_numpy(correlation_matrix).float().to(eeg_data.device)
     

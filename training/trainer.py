@@ -68,7 +68,8 @@ class NGISTrainer:
         self.current_epoch = 0
         self.global_step = 0
         self.best_loss = float('inf')
-        
+        self.early_stopping_counter = 0
+
         logger.info(f"Initialized NGIS trainer on {self.device}")
     
     def _init_model(self):
@@ -304,9 +305,17 @@ class NGISTrainer:
             'best_loss': self.best_loss,
             'config': self.config
         }
-        
-        self.checkpoint_manager.save_checkpoint(checkpoint, val_loss)
-        
+
+        # Check if this is the best model
+        is_best = val_loss < self.best_loss
+
+        self.checkpoint_manager.save_checkpoint(
+            checkpoint=checkpoint,
+            metric=val_loss,
+            epoch=self.current_epoch,
+            is_best=is_best
+        )
+
         # Update best loss
         if val_loss < self.best_loss:
             self.best_loss = val_loss
