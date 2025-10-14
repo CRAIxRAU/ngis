@@ -15,6 +15,7 @@ data:
   channel_selection_strategy: "uniform_spatial"  # Use uniform spatial selection
   preprocess: true
   augment: false  # Disable augmentation for initial testing
+  validation_split: 0.1  # Only use 10% for validation (faster)
 
 # Model configuration
 model:
@@ -45,8 +46,9 @@ training:
   learning_rate: 0.001
   batch_size: 2  # Small batch for testing
   output_dir: "outputs/"
-  save_frequency: 5
+  save_frequency: 1  # Save every epoch
   log_frequency: 10  # Log more frequently
+  validation_frequency: 1  # Validate every epoch
   early_stopping_patience: 5
   gradient_clip: 1.0
 
@@ -83,8 +85,8 @@ checkpointing:
 
 # Logging configuration
 logging:
-  level: "INFO"
-  log_frequency: 10
+  level: "DEBUG"
+  log_frequency: 1
   tensorboard: true
   wandb: false
   wandb_project: "ngis-ds003766"

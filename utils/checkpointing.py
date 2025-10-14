@@ -116,7 +116,7 @@ class CheckpointManager:
             Loaded checkpoint dictionary or None if failed.
         """
         try:
-            checkpoint = torch.load(checkpoint_path, map_location='cpu')
+            checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
             logger.info(f"Loaded checkpoint: {checkpoint_path}")
             return checkpoint
         except Exception as e:

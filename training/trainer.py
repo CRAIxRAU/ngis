@@ -190,22 +190,28 @@ class NGISTrainer:
         
         for batch_idx, batch in enumerate(self.train_dataloader):
             # Move batch to device
+            logger.debug(f"Processing batch {batch_idx}")
             batch = self._move_batch_to_device(batch)
-            
+            logger.debug(f"Batch moved to device, shape: {batch['eeg'].shape}")
+
             # Forward pass
+            logger.debug("Starting forward pass")
             outputs = self.model(
                 eeg_input=batch['eeg'],
                 return_spikes=True,
                 return_graph=True
             )
-            
+            logger.debug("Forward pass completed")
+
             # Calculate loss
+            logger.debug("Calculating loss")
             loss = self.loss_function(
                 real_eeg=batch['eeg'],
                 simulated_eeg=outputs['eeg_output'],
                 spike_trains=outputs['spike_trains'],
                 graph_data=outputs['graph_data']
             )
+            logger.debug(f"Loss calculated: {loss.item()}")
             
             # Backward pass
             self.optimizer.zero_grad()
@@ -239,12 +245,20 @@ class NGISTrainer:
     def _validate_epoch(self) -> float:
         """Validate for one epoch."""
         self.model.eval()
-        
+
         total_loss = 0.0
         num_batches = 0
-        
+
+        # Create progress bar for validation
+        if self.rank == 0:
+            pbar = tqdm(
+                desc=f"Validation {self.current_epoch}",
+                total=len(self.val_dataloader),
+                leave=False
+            )
+
         with torch.no_grad():
-            for batch in self.val_dataloader:
+            for batch_idx, batch in enumerate(self.val_dataloader):
                 # Move batch to device
                 batch = self._move_batch_to_device(batch)
                 
@@ -262,10 +276,19 @@ class NGISTrainer:
                     spike_trains=outputs['spike_trains'],
                     graph_data=outputs['graph_data']
                 )
-                
+
                 total_loss += loss.item()
                 num_batches += 1
-        
+
+                # Update progress bar
+                if self.rank == 0:
+                    pbar.update(1)
+                    pbar.set_postfix({'val_loss': loss.item()})
+
+        # Close progress bar
+        if self.rank == 0:
+            pbar.close()
+
         return total_loss / num_batches
     
     def _move_batch_to_device(self, batch: Dict) -> Dict:
