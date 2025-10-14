@@ -208,7 +208,14 @@ def main():
             max_duration=max_duration
         )
 
-        # For validation, use same dataloader but without augmentation
+        # For validation, use smaller subset (only first 10% of data for speed)
+        validation_split = getattr(config.data, 'validation_split', 0.1)
+        val_max_duration = max_duration * validation_split if max_duration else None
+
+        # If no max_duration set, use 10% of full data (95 seconds instead of 953)
+        if val_max_duration is None:
+            val_max_duration = 95.0  # ~10% of 953 seconds
+
         val_dataloader = create_training_dataloader(
             data_path=config.data.data_path,
             batch_size=config.data.batch_size,
@@ -221,7 +228,7 @@ def main():
             world_size=args.world_size,
             channel_selection_strategy=config.data.channel_selection_strategy,
             target_channels=config.data.channels,
-            max_duration=max_duration
+            max_duration=val_max_duration
         )
 
         # Set dataloaders on trainer
