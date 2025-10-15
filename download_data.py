@@ -29,45 +29,60 @@ def download_file(url: str, output_path: Path):
 
 
 def main():
-    """Download sub-01 resting state data."""
+    """Download EEG data from ds003766."""
 
     # OpenNeuro dataset base URL
     base_url = "https://s3.amazonaws.com/openneuro.org/ds003766"
 
-    # Files to download
-    subject = "sub-01"
-    task = "resting"
-
-    files = [
-        f"sub-01/eeg/sub-01_task-{task}_eeg.set",
-        f"sub-01/eeg/sub-01_task-{task}_eeg.fdt",
-        f"sub-01/eeg/sub-01_task-{task}_eeg.json",
-        f"sub-01/eeg/sub-01_task-{task}_channels.tsv",
-        f"sub-01/eeg/sub-01_task-{task}_events.tsv",
-    ]
+    # Configuration
+    subjects = [f"sub-{i:02d}" for i in range(1, 32)]  # sub-01 to sub-31
+    tasks = ["resting"]  # Start with resting, can add: food-choice, word-choice, image-choice
 
     # Output directory
     output_dir = Path("data/raw")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Downloading {subject} task-{task} data from OpenNeuro...")
+    print(f"Downloading {len(subjects)} subjects × {len(tasks)} tasks from OpenNeuro ds003766")
     print(f"Output directory: {output_dir.absolute()}\n")
 
-    for file_path in files:
-        url = f"{base_url}/{file_path}"
-        output_path = output_dir / Path(file_path).name
+    total_files = 0
+    skipped_files = 0
+    failed_files = 0
 
-        if output_path.exists():
-            print(f"Skipping (already exists): {output_path.name}")
-            continue
+    for subject in subjects:
+        for task in tasks:
+            print(f"\n📥 {subject} task-{task}:")
 
-        try:
-            download_file(url, output_path)
-        except Exception as e:
-            print(f"Failed to download {file_path}: {e}")
+            files = [
+                f"{subject}/eeg/{subject}_task-{task}_eeg.set",
+                f"{subject}/eeg/{subject}_task-{task}_eeg.fdt",
+                f"{subject}/eeg/{subject}_task-{task}_eeg.json",
+                f"{subject}/eeg/{subject}_task-{task}_channels.tsv",
+                f"{subject}/eeg/{subject}_task-{task}_events.tsv",
+            ]
 
-    print("\n✅ Download complete!")
-    print(f"Files are in: {output_dir.absolute()}")
+            for file_path in files:
+                url = f"{base_url}/{file_path}"
+                # Filename already has subject ID: sub-01_task-resting_eeg.fdt
+                output_path = output_dir / Path(file_path).name
+
+                if output_path.exists():
+                    print(f"  ⏭️  Skipping: {output_path.name}")
+                    skipped_files += 1
+                    continue
+
+                try:
+                    download_file(url, output_path)
+                    total_files += 1
+                except Exception as e:
+                    print(f"  ❌ Failed {file_path}: {e}")
+                    failed_files += 1
+
+    print(f"\n✅ Download complete!")
+    print(f"  Downloaded: {total_files} files")
+    print(f"  Skipped: {skipped_files} files")
+    print(f"  Failed: {failed_files} files")
+    print(f"  Location: {output_dir.absolute()}")
 
 
 if __name__ == "__main__":

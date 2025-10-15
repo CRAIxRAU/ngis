@@ -3,7 +3,7 @@
 
 # Data configuration
 data:
-  data_path: "data/raw/sub-01_task-resting_eeg.set"  # Path to specific EEG file
+  data_path: "data/raw"  # Directory with all subjects (or single file for testing)
   raw_data_path: "data/raw"
   batch_size: 16  # Increased for better GPU utilization (16 per GPU = 64 total with 4 GPUs)
   num_workers: 8  # 8 CPU threads for data loading (2 per GPU)
