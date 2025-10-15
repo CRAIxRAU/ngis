@@ -65,13 +65,7 @@ pip install -r requirements.txt
  
 Here we need to figure out how to use venvs, but my concern is that we already use the pytorch venv, can we use 2?
 
-### Step 6: Install requirements
+### Step 6: Run it
 ```bash
-python main.py --config configs/ds003766.yaml --epochs 1
-```
- 
-Here we need to figure out how to use venvs, but my concern is that we already use the pytorch venv, can we use 2?
-### Step 7: Run it
-```bash
-python main.py --config configs/ds003766.yaml --epochs 1
+torchrun --standalone --nnodes=1 --nproc_per_node=4 main.py --config configs/ds003766.yaml --epochs 1
 ```
