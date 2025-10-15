@@ -5,8 +5,8 @@
 data:
   data_path: "data/raw/sub-01_task-resting_eeg.set"  # Path to specific EEG file
   raw_data_path: "data/raw"
-  batch_size: 2  # Small batch size for testing
-  num_workers: 2  # Reduced workers for single subject
+  batch_size: 16  # Increased for better GPU utilization (16 per GPU = 64 total with 4 GPUs)
+  num_workers: 8  # 8 CPU threads for data loading (2 per GPU)
   segment_length: 1000  # 1 second segments (1000 samples @ 1000 Hz)
   overlap: 0.0  # No overlap for now
   sampling_rate: 1000.0  # Dataset sampling rate
@@ -44,7 +44,7 @@ model:
 training:
   epochs: 10  # Reduced for testing
   learning_rate: 0.001
-  batch_size: 2  # Small batch for testing
+  batch_size: 16  # Increased for better GPU utilization
   output_dir: "outputs/"
   save_frequency: 1  # Save every epoch
   log_frequency: 10  # Log more frequently
