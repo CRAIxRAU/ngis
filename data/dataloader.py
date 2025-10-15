@@ -65,7 +65,8 @@ def create_dataloader(
         pin_memory=pin_memory,
         drop_last=drop_last,
         sampler=sampler,
-        collate_fn=collate_eeg_batch
+        collate_fn=collate_eeg_batch,
+        persistent_workers=num_workers > 0  # Keep workers alive across epochs
     )
     
     logger.info(

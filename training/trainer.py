@@ -195,22 +195,24 @@ class NGISTrainer:
             )
 
         for batch_idx, batch in enumerate(self.train_dataloader):
+            batch_start = time.time()
+
             # Move batch to device
             range_push(f"Batch {batch_idx} processing")
-            logger.debug(f"Processing batch {batch_idx}")
+            t0 = time.time()
             batch = self._move_batch_to_device(batch)
-            logger.debug(f"Batch moved to device, shape: {batch['eeg'].shape}")
+            t1 = time.time()
             range_pop()  # End of batch processing
+
             # Forward pass
-            logger.debug("Starting forward pass")
             range_push(f"Batch {batch_idx} forward pass")
             outputs = self.model(
                 eeg_input=batch["eeg"], return_spikes=True, return_graph=True
             )
-            logger.debug("Forward pass completed")
+            t2 = time.time()
             range_pop()  # End of forward pass
+
             # Calculate loss
-            logger.debug("Calculating loss")
             range_push(f"Batch {batch_idx} loss calculation")
             loss = self.loss_function(
                 real_eeg=batch["eeg"],
@@ -218,8 +220,9 @@ class NGISTrainer:
                 spike_trains=outputs["spike_trains"],
                 graph_data=outputs["graph_data"],
             )
-            logger.debug(f"Loss calculated: {loss.item()}")
+            t3 = time.time()
             range_pop()  # End of loss calculation
+
             # Backward pass
             range_push(f"Batch {batch_idx} backward pass")
             self.optimizer.zero_grad()
@@ -232,12 +235,22 @@ class NGISTrainer:
 
             # Optimizer step
             self.optimizer.step()
+            t4 = time.time()
+            range_pop()  # End of backward pass
 
             # Update metrics
             total_loss += loss.item()
             num_batches += 1
             self.global_step += 1
-            range_pop()  # End of backward pass
+
+            # Log timing breakdown every 10 batches
+            if self.rank == 0 and batch_idx % 10 == 0:
+                logger.info(
+                    f"Batch {batch_idx} timing: "
+                    f"data={t1-t0:.2f}s, forward={t2-t1:.2f}s, "
+                    f"loss={t3-t2:.2f}s, backward={t4-t3:.2f}s, "
+                    f"total={t4-batch_start:.2f}s"
+                )
             # Update progress bar
             if self.rank == 0:
                 pbar.set_postfix({"loss": f"{loss.item():.4f}"})
