@@ -246,6 +246,8 @@ class NGISTrainer:
             # Log batch metrics
             if self.global_step % self.config.logging.log_frequency == 0:
                 self._log_batch_metrics(loss.item())
+            if batch_idx % 3 == 0 and batch_idx > 0:
+                break  # Temporary break for debugging
         if self.rank == 0:
             pbar.close()
 
@@ -296,6 +298,8 @@ class NGISTrainer:
                 if self.rank == 0:
                     pbar.update(1)
                     pbar.set_postfix({"val_loss": loss.item()})
+                if batch_idx % 3 == 0 and batch_idx > 0:
+                    break
         # Close progress bar
         if self.rank == 0:
             pbar.close()
