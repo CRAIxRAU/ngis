@@ -1,11 +1,11 @@
-# NGIS Configuration for ds003766 Dataset
+# NGIS Configuration for Helios Cluster
 # OpenNeuro dataset: https://openneuro.org/datasets/ds003766
 
 # Data configuration
 data:
-  # Use $PLG_GROUPS_STORAGE for persistent data (update path on cluster)
-  data_path: "data/raw"  # Local: data/raw | Cluster: $PLG_GROUPS_STORAGE/plghack2025bioart/ngis_data/raw
-  raw_data_path: "data/raw"
+  # Cluster storage path
+  data_path: "/net/storage/pr3/plgrid/plgghack2025bioart/data/raw"
+  raw_data_path: "/net/storage/pr3/plgrid/plgghack2025bioart/data/raw"
   batch_size: 16  # Increased for better GPU utilization (16 per GPU = 64 total with 4 GPUs)
   num_workers: 8  # 8 CPU threads for data loading (2 per GPU)
   segment_length: 1000  # 1 second segments (1000 samples @ 1000 Hz)
@@ -90,4 +90,4 @@ logging:
   log_frequency: 1
   tensorboard: true
   wandb: false
-  wandb_project: "ngis-ds003766"
+  wandb_project: "ngis-cluster"

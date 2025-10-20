@@ -69,3 +69,5 @@ Here we need to figure out how to use venvs, but my concern is that we already u
 ```bash
 torchrun --standalone --nnodes=1 --nproc_per_node=4 main.py --config configs/ds003766.yaml --epochs 1
 ```
+
+python /net/home/plgrid/plgsorinturculet/ngis/ngis/download_data.py
