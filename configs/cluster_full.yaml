@@ -8,9 +8,9 @@ data:
   data_path: "/net/storage/pr3/plgrid/plgghack2025bioart/data/raw"
   raw_data_path: "/net/storage/pr3/plgrid/plgghack2025bioart/data/raw"
 
-  # Memory-efficient batch settings
-  batch_size: 4  # Small batch to avoid OOM (4 per GPU = 16 total with 4 GPUs)
-  num_workers: 2  # Minimal workers to reduce memory overhead
+  # Batch settings optimized for 833GB RAM
+  batch_size: 32  # Good batch size for training (32 per GPU = 128 total with 4 GPUs)
+  num_workers: 8  # Use more workers for faster data loading
 
   # Segmentation settings
   segment_length: 1000  # 1 second segments (1000 samples @ 1000 Hz)
@@ -26,12 +26,12 @@ data:
   preprocess: true
   augment: false  # Disable augmentation to save compute
   validation_split: 0.15  # Use 15% for validation
-  preload: false  # CRITICAL: Lazy loading - load data on-demand to avoid OOM
+  preload: true  # Required for preprocessing (notch_filter needs data loaded)
 
-  # NO max_duration limit - loads full dataset!
-  # Each subject is ~15min = 900sec = 900 segments per subject
-  # 31 subjects × 900 segments = ~27,900 total segments
-  # With preload=false, data is loaded from disk during training instead of all at once
+  # NO max_duration - load FULL dataset! (833GB RAM available)
+  # Each subject ~15min average = 31 subjects × 15min = 465min (~7.75 hours of EEG data)
+  # Estimated memory: ~50-100GB for all data + preprocessing
+  # Plenty of headroom with 833GB available
 
 # Model configuration
 model:
