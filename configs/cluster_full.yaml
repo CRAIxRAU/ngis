@@ -26,10 +26,12 @@ data:
   preprocess: true
   augment: false  # Disable augmentation to save compute
   validation_split: 0.15  # Use 15% for validation
+  preload: false  # CRITICAL: Lazy loading - load data on-demand to avoid OOM
 
   # NO max_duration limit - loads full dataset!
   # Each subject is ~15min = 900sec = 900 segments per subject
   # 31 subjects × 900 segments = ~27,900 total segments
+  # With preload=false, data is loaded from disk during training instead of all at once
 
 # Model configuration
 model:

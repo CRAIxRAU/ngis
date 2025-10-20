@@ -192,6 +192,8 @@ def main():
 
         # Get optional max_duration for fast testing
         max_duration = getattr(config.data, 'max_duration', None)
+        # Get preload setting (default False for lazy loading)
+        preload = getattr(config.data, 'preload', False)
 
         train_dataloader = create_training_dataloader(
             data_path=config.data.data_path,
@@ -205,7 +207,8 @@ def main():
             world_size=args.world_size,
             channel_selection_strategy=config.data.channel_selection_strategy,
             target_channels=config.data.channels,
-            max_duration=max_duration
+            max_duration=max_duration,
+            preload=preload
         )
 
         # For validation, use smaller subset (only first 10% of data for speed)
@@ -228,7 +231,8 @@ def main():
             world_size=args.world_size,
             channel_selection_strategy=config.data.channel_selection_strategy,
             target_channels=config.data.channels,
-            max_duration=val_max_duration
+            max_duration=val_max_duration,
+            preload=preload
         )
 
         # Set dataloaders on trainer

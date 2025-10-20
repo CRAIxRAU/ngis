@@ -40,6 +40,7 @@ class EEGDataset(Dataset):
         channel_selection_strategy: Optional[str] = None,
         target_channels: int = 128,
         max_duration: Optional[float] = None,
+        preload: bool = False,  # Default to lazy loading to save memory
         **preprocessor_kwargs
     ):
         """
@@ -54,6 +55,7 @@ class EEGDataset(Dataset):
             channels: List of channel names to use.
             sampling_rate: Target sampling rate.
             max_duration: Maximum duration in seconds to load (for fast testing).
+            preload: Whether to preload all data into memory (False = lazy loading).
             **preprocessor_kwargs: Additional arguments for preprocessor.
         """
         self.segment_length = segment_length
@@ -61,6 +63,7 @@ class EEGDataset(Dataset):
         self.preprocess = preprocess
         self.augment = augment
         self.sampling_rate = sampling_rate
+        self.preload_data = preload
 
         # Initialize loader and preprocessor
         self.loader = EEGLoader(
@@ -68,7 +71,8 @@ class EEGDataset(Dataset):
             sampling_rate=sampling_rate,
             channel_selection_strategy=channel_selection_strategy,
             target_channels=target_channels,
-            max_duration=max_duration
+            max_duration=max_duration,
+            preload=preload
         )
         
         self.preprocessor = EEGPreprocessor(

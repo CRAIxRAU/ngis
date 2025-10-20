@@ -28,6 +28,7 @@ class DataConfig:
     channels: Optional[list] = None
     preprocess: bool = True
     augment: bool = True
+    preload: bool = False  # Lazy loading by default to save memory
 
 
 @dataclass
