@@ -371,7 +371,7 @@ class NGISTrainer:
         if checkpoint is not None:
             self.current_epoch = checkpoint["epoch"]
             self.global_step = checkpoint["global_step"]
-            self.best_loss = checkpoint["best_loss"]
+            self.best_loss = float(checkpoint["best_loss"])
 
             # Load model state
             self.model.load_state_dict(checkpoint["model_state_dict"])
