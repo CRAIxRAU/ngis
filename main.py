@@ -126,12 +126,9 @@ def setup_distributed(args):
         args.local_rank = args.rank
 
     if args.world_size > 1:
-        torch.distributed.init_process_group(
-            backend='nccl',
-            init_method=args.dist_url,
-            world_size=args.world_size,
-            rank=args.rank
-        )
+        # When using torchrun, it sets all env vars automatically
+        # Just call init_process_group without manual init_method
+        torch.distributed.init_process_group(backend='nccl')
         # Set device to local rank
         torch.cuda.set_device(args.local_rank)
         return True
