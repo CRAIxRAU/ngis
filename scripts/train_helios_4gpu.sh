@@ -6,7 +6,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --gpus-per-task=4
 #SBATCH --cpus-per-task=32
-#SBATCH --mem=600GB
+#SBATCH --mem=200GB
 #SBATCH --time=48:00:00
 #SBATCH --output=logs/ngis_train_4gpu_%j.out
 #SBATCH --error=logs/ngis_train_4gpu_%j.err
@@ -25,7 +25,7 @@ echo "Partition: $SLURM_JOB_PARTITION"
 echo "Node: $SLURM_NODELIST"
 echo "GPUs: $SLURM_GPUS_PER_TASK"
 echo "CPUs: $SLURM_CPUS_PER_TASK"
-echo "Memory: 600GB"
+echo "Memory: 200GB"
 echo "Start time: $(date)"
 echo "=========================================="
 
