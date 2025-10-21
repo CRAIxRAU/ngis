@@ -85,7 +85,8 @@ torchrun \
     --nproc_per_node=4 \
     main.py \
     --config configs/cluster_full.yaml \
-    --epochs 50
+    --epochs 50 \
+    --world_size 4
 
 echo "=========================================="
 echo "Job finished at: $(date)"
