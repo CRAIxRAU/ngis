@@ -259,26 +259,28 @@ class GSNN(nn.Module):
         """Simulate spiking dynamics using LIF neurons."""
 
         batch_size, n_neurons, seq_len = neuron_currents.shape
+        device = neuron_currents.device
 
-        spike_trains = torch.zeros_like(neuron_currents)
-        membrane_potentials = torch.zeros_like(neuron_currents)
+        # Use vectorized forward pass (processes all timesteps efficiently)
+        range_push("LIF Vectorized Forward")
+        spike_trains, membrane_potentials = self.lif_neurons.forward_vectorized(
+            neuron_currents, return_membrane=True
+        )
+        range_pop()
 
-        for b in range(batch_size):
-            self.lif_neurons.reset_state(device=neuron_currents.device)
-            if hasattr(self, "synapses"):
-                self.synapses.reset_state(device=neuron_currents.device)
+        # Apply synaptic filtering if needed (only during training)
+        use_synapses = hasattr(self, "synapses") and self.training
+        if use_synapses:
+            range_push("Synapse Filtering")
+            self.synapses.reset_state(batch_size=batch_size, device=device)
 
+            filtered_trains = torch.zeros_like(spike_trains)
             for t in range(seq_len):
-                current_input = neuron_currents[b : b + 1, :, t]
-                spikes, membrane = self.lif_neurons(current_input)
+                filtered_spikes, _ = self.synapses(spike_trains[:, :, t])
+                filtered_trains[:, :, t] = filtered_spikes
 
-                if hasattr(self, "synapses"):
-                    filtered_spikes, _ = self.synapses(spikes)
-                else:
-                    filtered_spikes = spikes
-
-                spike_trains[b, :, t] = filtered_spikes.squeeze(0)
-                membrane_potentials[b, :, t] = membrane.squeeze(0)
+            spike_trains = filtered_trains
+            range_pop()
 
         return spike_trains, membrane_potentials
 

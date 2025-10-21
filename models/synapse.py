@@ -79,21 +79,26 @@ class Synapse(nn.Module):
         
         logger.info(f"Initialized synapses: {n_neurons}x{n_neurons} connections")
     
-    def reset_state(self, device: Optional[torch.device] = None):
+    def reset_state(
+        self,
+        batch_size: int = 1,
+        device: Optional[torch.device] = None,
+    ):
         """Reset synaptic state variables."""
         target_device = device or self.weights.device
 
-        # Synaptic current
-        self.synaptic_current = torch.zeros(self.n_neurons, device=target_device)
+        self.synaptic_current = torch.zeros(
+            batch_size, self.n_neurons, device=target_device
+        )
 
-        # Spike history for plasticity
-        self.spike_history = torch.zeros(self.n_neurons, device=target_device)
+        self.spike_history = torch.zeros(
+            batch_size, self.n_neurons, device=target_device
+        )
 
-        # Weight update history
         self.weight_updates = torch.zeros(
             self.n_neurons,
             self.n_neurons,
-            device=target_device
+            device=target_device,
         )
     
     def forward(
@@ -111,20 +116,16 @@ class Synapse(nn.Module):
         Returns:
             Tuple of (filtered_spikes, synaptic_currents).
         """
+        if spikes.dim() != 2 or spikes.size(1) != self.n_neurons:
+            raise ValueError("Expected spikes with shape (batch_size, n_neurons)")
+
         batch_size = spikes.shape[0]
-        
-        # Initialize output tensors
-        filtered_spikes = torch.zeros_like(spikes)
-        synaptic_currents = torch.zeros_like(spikes)
-        
-        # Process each batch element
-        for b in range(batch_size):
-            # Update synaptic dynamics
-            batch_filtered, batch_current = self._update_synapses(spikes[b])
-            
-            filtered_spikes[b] = batch_filtered
-            synaptic_currents[b] = batch_current
-        
+
+        if not hasattr(self, "synaptic_current") or self.synaptic_current.size(0) != batch_size:
+            self.reset_state(batch_size=batch_size, device=spikes.device)
+
+        filtered_spikes, synaptic_currents = self._update_synapses(spikes)
+
         if return_current:
             return filtered_spikes, synaptic_currents
         else:
@@ -136,30 +137,25 @@ class Synapse(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Update synaptic dynamics for a single time step.
-        
+
         Args:
-            spikes: Input spikes (n_neurons).
-            
+            spikes: Input spikes (batch_size, n_neurons).
+
         Returns:
             Tuple of (filtered_spikes, synaptic_current).
         """
-        # Update synaptic current
-        # Synaptic current equation: ds/dt = -s / tau_s + spikes
-        # Discretized: s(t+1) = s(t) + dt * (-s(t) / tau_s + spikes)
-        
+        if spikes.dim() != 2:
+            raise ValueError("Expected batched spikes")
+
         synaptic_decay = self.dt / self.tau_s
         self.synaptic_current = self.synaptic_current * (1 - synaptic_decay) + spikes
-        
-        # Apply synaptic weights
-        weighted_current = torch.matmul(self.weights, self.synaptic_current)
-        
-        # Apply weight constraints
+
+        weighted_current = torch.matmul(self.synaptic_current, self.weights.t())
         weighted_current = torch.clamp(weighted_current, self.min_weight, self.max_weight)
-        
-        # Update spike history for plasticity
+
         if self.plasticity:
             self._update_plasticity(spikes)
-        
+
         return spikes, weighted_current
     
     def _update_plasticity(self, spikes: torch.Tensor):
@@ -167,31 +163,26 @@ class Synapse(nn.Module):
         Update synaptic weights based on spike-timing dependent plasticity (STDP).
         
         Args:
-            spikes: Current spikes (n_neurons).
+            spikes: Current spikes (batch_size, n_neurons).
         """
-        # Simple STDP rule: weight change depends on spike timing
-        # This is a simplified implementation
-        
-        # Calculate weight updates based on spike correlations
-        spike_correlations = torch.outer(spikes, self.spike_history)
-        
-        # STDP rule: LTP for positive correlations, LTD for negative
-        weight_updates = self.learning_rate * spike_correlations
-        
-        # Apply weight updates in-place to preserve parameter object
-        self.weights.data.add_(weight_updates)
+        if spikes.dim() != 2:
+            raise ValueError("Expected batched spikes for plasticity update")
 
-        # Apply weight constraints
+        if self.spike_history.size(0) != spikes.size(0):
+            self.spike_history = torch.zeros_like(spikes)
+
+        # Aggregate correlations across the batch for a coarse STDP signal
+        spike_correlations = torch.einsum("bi,bj->ij", spikes, self.spike_history)
+        spike_correlations = spike_correlations / max(spikes.size(0), 1)
+
+        weight_updates = self.learning_rate * spike_correlations
+        self.weights.data.add_(weight_updates)
         self.weights.data.clamp_(self.min_weight, self.max_weight)
 
-        # Apply weight decay
         if self.weight_decay > 0:
             self.weights.data.mul_(1 - self.weight_decay)
-        
-        # Update spike history
-        self.spike_history = spikes.clone()
-        
-        # Store weight updates for monitoring
+
+        self.spike_history = spikes.detach()
         self.weight_updates = weight_updates
     
     def get_weights(self) -> torch.Tensor:
