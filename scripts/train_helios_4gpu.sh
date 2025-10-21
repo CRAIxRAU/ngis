@@ -29,8 +29,9 @@ echo "Memory: 200GB"
 echo "Start time: $(date)"
 echo "=========================================="
 
-# Change to ngis directory (relative to script location)
-cd "$(dirname "$0")/.." || { echo "Failed to cd to ngis directory"; exit 1; }
+# Change to ngis directory
+# SLURM_SUBMIT_DIR is the directory from which sbatch was submitted
+cd "$SLURM_SUBMIT_DIR" || { echo "Failed to cd to ngis directory"; exit 1; }
 
 # Store absolute path to ngis directory
 NGIS_DIR=$(pwd)
