@@ -1,0 +1,106 @@
+# NGIS Configuration for Helios Cluster - FULL DATASET
+# OpenNeuro dataset: https://openneuro.org/datasets/ds003766
+# Optimized for loading all 31 subjects without OOM
+
+# Data configuration
+data:
+  # Cluster storage path - loads ALL subjects
+  data_path: "/net/storage/pr3/plgrid/plgghack2025bioart/data/raw"
+  raw_data_path: "/net/storage/pr3/plgrid/plgghack2025bioart/data/raw"
+
+  # Memory-efficient batch settings
+  batch_size: 4  # Small batch to avoid OOM (4 per GPU = 16 total with 4 GPUs)
+  num_workers: 2  # Minimal workers to reduce memory overhead
+
+  # Segmentation settings
+  segment_length: 1000  # 1 second segments (1000 samples @ 1000 Hz)
+  overlap: 0.0  # No overlap saves memory
+
+  # Sampling and channels
+  sampling_rate: 1000.0  # Dataset sampling rate
+  channels: 128  # Target channel count (ds003766 has 129, will drop 1)
+  original_channels: 129  # Actual channels in dataset
+  channel_selection_strategy: "uniform_spatial"  # Use uniform spatial selection
+
+  # Processing flags
+  preprocess: true
+  augment: false  # Disable augmentation to save compute
+  validation_split: 0.15  # Use 15% for validation
+
+  # NO max_duration limit - loads full dataset!
+  # Each subject is ~15min = 900sec = 900 segments per subject
+  # 31 subjects × 900 segments = ~27,900 total segments
+
+# Model configuration
+model:
+  n_channels: 128
+  n_neurons: 256
+  n_layers: 3
+  hidden_dim: 64
+  graph_type: "functional"
+  connectivity_threshold: 0.1
+  dropout: 0.1
+  lif_params:
+    tau_m: 20.0
+    v_rest: -65.0
+    v_threshold: -55.0
+    v_reset: -65.0
+    refractory_period: 2.0
+  synapse_params:
+    tau_s: 5.0
+    weight_scale: 1.0
+    plasticity: true
+  readout_params:
+    readout_type: "linear"
+    activation: "tanh"
+
+# Training configuration
+training:
+  epochs: 50  # Full training
+  learning_rate: 0.001
+  batch_size: 4  # Match data batch_size
+  output_dir: "outputs/"
+  save_frequency: 5  # Save every 5 epochs
+  log_frequency: 50  # Log less frequently to reduce I/O
+  validation_frequency: 1  # Validate every epoch
+  early_stopping_patience: 10
+  gradient_clip: 1.0
+
+# Loss function configuration
+loss:
+  eeg_weight: 1.0
+  spiking_weight: 0.1
+  biological_weight: 0.01
+  regularization_weight: 0.001
+
+# Optimizer configuration
+optimizer:
+  type: "adam"
+  learning_rate: 0.001
+  weight_decay: 0.0001  # Small regularization
+  beta1: 0.9
+  beta2: 0.999
+  eps: 1e-8
+
+# Scheduler configuration
+scheduler:
+  type: "reduce_lr_on_plateau"
+  params:
+    mode: "min"
+    factor: 0.5
+    patience: 5
+    min_lr: 1e-6
+
+# Checkpointing configuration
+checkpointing:
+  save_dir: "checkpoints/"
+  save_frequency: 5
+  max_checkpoints: 5  # Keep more checkpoints for full training
+
+# Logging configuration
+logging:
+  level: "INFO"  # Less verbose for long training
+  log_frequency: 50
+  tensorboard: true
+  wandb: false
+  wandb_project: "ngis-cluster-full"

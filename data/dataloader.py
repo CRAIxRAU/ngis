@@ -157,12 +157,14 @@ def create_training_dataloader(
     Returns:
         DataLoader for training.
     """
-    # Create dataset
+    # Create dataset with rank and world_size for data sharding
     dataset = EEGDataset(
         data_path=data_path,
         segment_length=segment_length,
         overlap=overlap,
         augment=augment,
+        rank=rank,
+        world_size=world_size,
         **dataset_kwargs
     )
     

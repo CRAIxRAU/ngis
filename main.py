@@ -117,13 +117,20 @@ def load_config(config_path: str) -> Config:
 
 def setup_distributed(args):
     """Setup distributed training if world_size > 1."""
+    # When using torchrun, get rank from environment variable
+    if 'RANK' in os.environ:
+        args.rank = int(os.environ['RANK'])
+    if 'LOCAL_RANK' in os.environ:
+        args.local_rank = int(os.environ['LOCAL_RANK'])
+    else:
+        args.local_rank = args.rank
+
     if args.world_size > 1:
-        torch.distributed.init_process_group(
-            backend='nccl',
-            init_method=args.dist_url,
-            world_size=args.world_size,
-            rank=args.rank
-        )
+        # When using torchrun, it sets all env vars automatically
+        # Just call init_process_group without manual init_method
+        torch.distributed.init_process_group(backend='nccl')
+        # Set device to local rank
+        torch.cuda.set_device(args.local_rank)
         return True
     return False
 
@@ -180,7 +187,12 @@ def main():
     
     # Initialize trainer
     try:
-        trainer = NGISTrainer(config, is_distributed=is_distributed)
+        trainer = NGISTrainer(
+            config,
+            is_distributed=is_distributed,
+            rank=args.rank,
+            world_size=args.world_size
+        )
         logger.info("Initialized NGIS trainer successfully")
     except Exception as e:
         logger.error(f"Failed to initialize trainer: {e}")
