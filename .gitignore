@@ -211,4 +211,8 @@ data/raw/
 outputs/
 logs/
 checkpoints/
+ngis-profiler-run/
+*.nsys-rep
+*.qdrep
+*.sqlite
 
