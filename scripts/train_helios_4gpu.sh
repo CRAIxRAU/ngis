@@ -37,14 +37,24 @@ cd "$SLURM_SUBMIT_DIR" || { echo "Failed to cd to ngis directory"; exit 1; }
 NGIS_DIR=$(pwd)
 echo "Working directory: $NGIS_DIR"
 
-# Load ML bundle module
+# Load ML bundle module FIRST to get Python 3.11
 echo "Loading ML-bundle module..."
 module add ML-bundle/25.04
 
 # Virtual environment is in parent directory (plgghack2025bioart/venv/pytorch)
 VENV_PATH="$(dirname "$NGIS_DIR")/venv/pytorch"
+
+# Remove old venv if it exists with wrong Python version
+if [ -d "$VENV_PATH" ]; then
+    VENV_PYTHON_VERSION=$("$VENV_PATH/bin/python" --version 2>&1 | grep -oP '\d+\.\d+' | head -1)
+    if [[ ! "$VENV_PYTHON_VERSION" == "3.11" ]]; then
+        echo "Removing old venv with Python $VENV_PYTHON_VERSION..."
+        rm -rf "$VENV_PATH"
+    fi
+fi
+
 if [ ! -d "$VENV_PATH" ]; then
-    echo "Creating new virtual environment at $VENV_PATH..."
+    echo "Creating new virtual environment with Python $(python3 --version) at $VENV_PATH..."
     python3 -m venv --system-site-packages "$VENV_PATH"
 fi
 
