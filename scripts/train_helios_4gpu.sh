@@ -84,8 +84,8 @@ python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f
 echo "Verifying MNE installation..."
 python -c "import mne; print(f'MNE version: {mne.__version__}')"
 
-# Remove old checkpoints if requested (comment out to keep them)
-# rm -rf checkpoints/*.pth
+# Remove old checkpoints to avoid compatibility issues after merge
+rm -rf checkpoints/*.pth
 
 echo "=========================================="
 echo "Starting distributed training on 4× GH200 GPUs"
