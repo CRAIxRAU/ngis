@@ -32,18 +32,23 @@ echo "=========================================="
 # Change to ngis directory (relative to script location)
 cd "$(dirname "$0")/.." || { echo "Failed to cd to ngis directory"; exit 1; }
 
+# Store absolute path to ngis directory
+NGIS_DIR=$(pwd)
+echo "Working directory: $NGIS_DIR"
+
 # Load ML bundle module
 echo "Loading ML-bundle module..."
 module add ML-bundle/25.04
 
-# Create and activate virtual environment with system site packages
-if [ ! -d "venv/pytorch" ]; then
-    echo "Creating new virtual environment at venv/pytorch..."
-    python3 -m venv --system-site-packages venv/pytorch
+# Virtual environment is in parent directory (plgghack2025bioart/venv/pytorch)
+VENV_PATH="$(dirname "$NGIS_DIR")/venv/pytorch"
+if [ ! -d "$VENV_PATH" ]; then
+    echo "Creating new virtual environment at $VENV_PATH..."
+    python3 -m venv --system-site-packages "$VENV_PATH"
 fi
 
 echo "Activating virtual environment..."
-source venv/pytorch/bin/activate
+source "$VENV_PATH/bin/activate"
 
 # Install specific PyTorch version if not already installed
 echo "Python: $(which python)"
