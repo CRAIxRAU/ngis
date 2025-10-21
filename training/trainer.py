@@ -257,7 +257,7 @@ class NGISTrainer:
         if self.rank == 0:
             pbar.close()
 
-        return total_loss / num_batches
+        return float(total_loss / num_batches)
 
     def _validate_epoch(self) -> float:
         """Validate for one epoch."""
@@ -310,7 +310,7 @@ class NGISTrainer:
         if self.rank == 0:
             pbar.close()
 
-        return total_loss / num_batches
+        return float(total_loss / num_batches)
 
     def _move_batch_to_device(self, batch: Dict) -> Dict:
         """Move batch to device."""
