@@ -187,7 +187,12 @@ def main():
     
     # Initialize trainer
     try:
-        trainer = NGISTrainer(config, is_distributed=is_distributed)
+        trainer = NGISTrainer(
+            config,
+            is_distributed=is_distributed,
+            rank=args.rank,
+            world_size=args.world_size
+        )
         logger.info("Initialized NGIS trainer successfully")
     except Exception as e:
         logger.error(f"Failed to initialize trainer: {e}")
