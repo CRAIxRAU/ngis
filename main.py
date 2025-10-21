@@ -117,6 +117,12 @@ def load_config(config_path: str) -> Config:
 
 def setup_distributed(args):
     """Setup distributed training if world_size > 1."""
+    # When using torchrun, get rank and world_size from environment variables
+    if 'RANK' in os.environ:
+        args.rank = int(os.environ['RANK'])
+        args.world_size = int(os.environ['WORLD_SIZE'])
+        args.local_rank = int(os.environ['LOCAL_RANK'])
+
     if args.world_size > 1:
         torch.distributed.init_process_group(
             backend='nccl',
@@ -124,6 +130,8 @@ def setup_distributed(args):
             world_size=args.world_size,
             rank=args.rank
         )
+        # Set device based on local rank
+        torch.cuda.set_device(args.local_rank)
         return True
     return False
 
