@@ -174,9 +174,9 @@ class EEGLoader:
             return positions
     
     def load_directory(
-        self, 
+        self,
         data_dir: Union[str, Path],
-        file_pattern: str = "*.edf"
+        file_pattern: str = "*.set"
     ) -> Dict[str, mne.io.Raw]:
         """
         Load all EEG files from a directory.
