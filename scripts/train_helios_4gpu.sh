@@ -32,18 +32,29 @@ echo "=========================================="
 # Change to ngis directory
 cd $HOME/ngis/ngis || { echo "Failed to cd to ngis directory"; exit 1; }
 
-# Activate existing virtual environment
-if [ -d "$HOME/venv/pytorch" ]; then
-    echo "Activating existing virtual environment..."
-    source $HOME/venv/pytorch/bin/activate
-else
-    echo "ERROR: Virtual environment not found at $HOME/venv/pytorch"
-    echo "Please create it first with: python3 -m venv $HOME/venv/pytorch"
-    exit 1
+# Load ML bundle module
+echo "Loading ML-bundle module..."
+module add ML-bundle/25.04
+
+# Create and activate virtual environment with system site packages
+if [ ! -d "venv/pytorch" ]; then
+    echo "Creating new virtual environment at venv/pytorch..."
+    python3 -m venv --system-site-packages venv/pytorch
+fi
+
+echo "Activating virtual environment..."
+source venv/pytorch/bin/activate
+
+# Install specific PyTorch version if not already installed
+echo "Python: $(which python)"
+if ! python -c "import torch; assert torch.__version__.startswith('2.8')" 2>/dev/null; then
+    echo "Installing PyTorch 2.8.0+cu128..."
+    pip3 install --no-cache-dir torch==2.8.0+cu128 torchvision==0.23.0
 fi
 
 # Verify PyTorch installation
-python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}')" || { echo "PyTorch not properly installed"; exit 1; }
+echo "Verifying PyTorch installation..."
+python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'CUDA device count: {torch.cuda.device_count()}')"
 
 # Remove old checkpoints if requested (comment out to keep them)
 # rm -rf checkpoints/*.pth
