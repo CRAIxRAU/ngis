@@ -6,7 +6,7 @@
 #SBATCH --ntasks-per-node=1
 #SBATCH --gpus-per-task=4
 #SBATCH --cpus-per-task=32
-#SBATCH --mem=200GB
+#SBATCH --mem=600GB
 #SBATCH --time=48:00:00
 #SBATCH --output=logs/ngis_train_4gpu_%j.out
 #SBATCH --error=logs/ngis_train_4gpu_%j.err
@@ -25,7 +25,7 @@ echo "Partition: $SLURM_JOB_PARTITION"
 echo "Node: $SLURM_NODELIST"
 echo "GPUs: $SLURM_GPUS_PER_TASK"
 echo "CPUs: $SLURM_CPUS_PER_TASK"
-echo "Memory: 200GB"
+echo "Memory: 600GB"
 echo "Start time: $(date)"
 echo "=========================================="
 
@@ -74,7 +74,7 @@ python -c "import mne; print(f'MNE version: {mne.__version__}')"
 echo "=========================================="
 echo "Starting distributed training on 4× GH200 GPUs"
 echo "Config: configs/cluster_full.yaml"
-echo "Max duration per subject: 240 seconds"
+echo "Data sharding: Each GPU loads ~8 subjects (31 total / 4 GPUs)"
 echo "=========================================="
 
 # Run distributed training using torchrun
