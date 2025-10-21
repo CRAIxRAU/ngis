@@ -52,9 +52,21 @@ if ! python -c "import torch; assert torch.__version__.startswith('2.8')" 2>/dev
     pip3 install --no-cache-dir torch==2.8.0+cu128 torchvision==0.23.0
 fi
 
+# Install project dependencies
+if [ -f "requirements.txt" ]; then
+    echo "Installing project dependencies from requirements.txt..."
+    pip3 install -r requirements.txt
+else
+    echo "WARNING: requirements.txt not found"
+fi
+
 # Verify PyTorch installation
 echo "Verifying PyTorch installation..."
 python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f'CUDA available: {torch.cuda.is_available()}'); print(f'CUDA device count: {torch.cuda.device_count()}')"
+
+# Verify MNE installation
+echo "Verifying MNE installation..."
+python -c "import mne; print(f'MNE version: {mne.__version__}')"
 
 # Remove old checkpoints if requested (comment out to keep them)
 # rm -rf checkpoints/*.pth
