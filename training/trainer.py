@@ -98,8 +98,10 @@ class NGISTrainer:
                 find_unused_parameters=True,
             )
 
+        # Access the underlying module if wrapped in DDP
+        model_to_count = self.model.module if hasattr(self.model, 'module') else self.model
         logger.info(
-            f"Initialized model with {self.model.count_parameters()['trainable_parameters']} parameters"
+            f"Initialized model with {model_to_count.count_parameters()['trainable_parameters']} parameters"
         )
 
     def _init_loss_function(self):
