@@ -40,6 +40,8 @@ class EEGDataset(Dataset):
         channel_selection_strategy: Optional[str] = None,
         target_channels: int = 128,
         max_duration: Optional[float] = None,
+        rank: int = 0,
+        world_size: int = 1,
         **preprocessor_kwargs
     ):
         """
@@ -54,6 +56,8 @@ class EEGDataset(Dataset):
             channels: List of channel names to use.
             sampling_rate: Target sampling rate.
             max_duration: Maximum duration in seconds to load (for fast testing).
+            rank: Process rank for distributed training (0 to world_size-1).
+            world_size: Total number of processes in distributed training.
             **preprocessor_kwargs: Additional arguments for preprocessor.
         """
         self.segment_length = segment_length
@@ -61,6 +65,8 @@ class EEGDataset(Dataset):
         self.preprocess = preprocess
         self.augment = augment
         self.sampling_rate = sampling_rate
+        self.rank = rank
+        self.world_size = world_size
 
         # Initialize loader and preprocessor
         self.loader = EEGLoader(
@@ -83,29 +89,36 @@ class EEGDataset(Dataset):
         logger.info(f"Created EEG dataset with {len(self.segments)} segments")
     
     def _load_data(self, data_path: Union[str, List[str]]):
-        """Load EEG data from file(s)."""
+        """Load EEG data from file(s), sharded by rank for distributed training."""
         if isinstance(data_path, str):
             # Single file or directory
             path = data_path
             if path.endswith(('.edf', '.bdf', '.fif', '.set', '.cnt')):
-                # Single file
-                raw = self.loader.load_file(path)
-                self.raw_data = {'single_file': raw}
+                # Single file - only rank 0 loads it
+                if self.rank == 0:
+                    raw = self.loader.load_file(path)
+                    self.raw_data = {'single_file': raw}
+                else:
+                    self.raw_data = {}
             else:
-                # Directory
-                self.raw_data = self.loader.load_directory(path)
+                # Directory - shard files across ranks
+                self.raw_data = self.loader.load_directory(path, rank=self.rank, world_size=self.world_size)
         else:
-            # List of files
+            # List of files - shard across ranks
             self.raw_data = {}
-            for file_path in data_path:
-                try:
-                    raw = self.loader.load_file(file_path)
-                    self.raw_data[Path(file_path).stem] = raw
-                except Exception as e:
-                    logger.warning(f"Failed to load {file_path}: {e}")
-        
+            for idx, file_path in enumerate(data_path):
+                # Only load files assigned to this rank
+                if idx % self.world_size == self.rank:
+                    try:
+                        raw = self.loader.load_file(file_path)
+                        self.raw_data[Path(file_path).stem] = raw
+                    except Exception as e:
+                        logger.warning(f"Failed to load {file_path}: {e}")
+
         if not self.raw_data:
-            raise ValueError("No valid EEG data found")
+            logger.warning(f"Rank {self.rank}: No valid EEG data found (this may be normal for some ranks)")
+            # Create empty raw_data dict to avoid errors
+            self.raw_data = {}
     
     def _segment_data(self):
         """Segment EEG data into training segments."""

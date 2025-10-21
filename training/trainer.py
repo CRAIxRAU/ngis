@@ -56,9 +56,11 @@ class NGISTrainer:
         self.is_distributed = is_distributed
         self.rank = rank
         self.world_size = world_size
-        self.device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu"
-        )
+        # Set device to specific GPU based on rank
+        if torch.cuda.is_available():
+            self.device = torch.device(f"cuda:{rank}")
+        else:
+            self.device = torch.device("cpu")
 
         # Initialize components
         self._init_model()
@@ -91,15 +93,19 @@ class NGISTrainer:
 
         # Wrap with DDP if distributed
         if self.is_distributed:
+            # Use current device instead of rank for device_ids
+            current_device = torch.cuda.current_device()
             self.model = DDP(
                 self.model,
-                device_ids=[self.rank],
-                output_device=self.rank,
+                device_ids=[current_device],
+                output_device=current_device,
                 find_unused_parameters=True,
             )
 
+        # Access the underlying module if wrapped in DDP
+        model_to_count = self.model.module if hasattr(self.model, 'module') else self.model
         logger.info(
-            f"Initialized model with {self.model.count_parameters()['trainable_parameters']} parameters"
+            f"Initialized model with {model_to_count.count_parameters()['trainable_parameters']} parameters"
         )
 
     def _init_loss_function(self):
