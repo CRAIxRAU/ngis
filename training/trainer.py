@@ -56,9 +56,11 @@ class NGISTrainer:
         self.is_distributed = is_distributed
         self.rank = rank
         self.world_size = world_size
-        self.device = torch.device(
-            "cuda" if torch.cuda.is_available() else "cpu"
-        )
+        # Set device to specific GPU based on rank
+        if torch.cuda.is_available():
+            self.device = torch.device(f"cuda:{rank}")
+        else:
+            self.device = torch.device("cpu")
 
         # Initialize components
         self._init_model()
