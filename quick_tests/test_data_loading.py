@@ -23,7 +23,7 @@ def main():
     logger.info("="*60)
 
     # Load config
-    config = Config.from_yaml("configs/ds003766.yaml")
+    config = Config.from_yaml("../configs/ds003766.yaml")
     logger.info(f"Loaded config from configs/ds003766.yaml")
     logger.info(f"Data path: {config.data.data_path}")
     logger.info(f"Channels: {config.data.channels}")

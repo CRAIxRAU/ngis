@@ -19,7 +19,7 @@ from models.simple_eeg_model import SimpleEEGModel
 
 # Path to the resting-state EEG recording for subject 01
 DATA_PATH = Path(
-    "data/raw/ds003766/sub-01/eeg/sub-01_task-resting_eeg.set"
+    "../data/raw/ds003766/sub-01/eeg/sub-01_task-resting_eeg.set"
 )
 
 # Default list of the 128 BioSemi channel names used in ds003766
@@ -159,7 +159,7 @@ def main() -> None:
         print("=" * 60)
 
     print("\nTraining completed successfully! Saving checkpoint...")
-    output_dir = Path("outputs")
+    output_dir = Path("../outputs")
     output_dir.mkdir(exist_ok=True)
     checkpoint_path = output_dir / "quick_model_real.pt"
     torch.save(model.state_dict(), checkpoint_path)

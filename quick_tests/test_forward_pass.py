@@ -17,7 +17,7 @@ def test_single_batch():
     print("="*60)
 
     # Load config
-    config = Config.from_yaml('configs/ds003766.yaml')
+    config = Config.from_yaml('../configs/ds003766.yaml')
     print(f"[OK] Config loaded: {config.data.channels} channels")
 
     # Create trainer

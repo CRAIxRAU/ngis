@@ -20,7 +20,7 @@ from training.loss_functions import CombinedLoss
 from utils.visualization import EEGVisualizer, NetworkVisualizer
 
 REAL_DATA_PATH = Path(
-    "data/raw/ds003766/sub-01/eeg/sub-01_task-resting_eeg.set"
+    "../data/raw/ds003766/sub-01/eeg/sub-01_task-resting_eeg.set"
 )
 CHANNELS_128: List[str] = [f"E{i}" for i in range(1, 129)]
 
@@ -182,7 +182,7 @@ def main() -> None:
         print("=" * 60)
 
     print("\nTraining completed successfully! Saving checkpoint and visualizations...")
-    output_dir = Path("outputs")
+    output_dir = Path("../outputs")
     output_dir.mkdir(exist_ok=True)
     checkpoint_path = output_dir / "gsnn_quick_model.pt"
     torch.save(model.state_dict(), checkpoint_path)

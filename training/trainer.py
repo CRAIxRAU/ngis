@@ -168,7 +168,7 @@ class NGISTrainer:
             val_loss = self._validate_epoch()
 
             # Update scheduler
-            self.scheduler.step(val_loss)
+            self.scheduler.step(float(val_loss))
 
             # Log progress
             self._log_epoch(epoch, train_loss, val_loss)
@@ -252,8 +252,6 @@ class NGISTrainer:
             # Log batch metrics
             if self.global_step % self.config.logging.log_frequency == 0:
                 self._log_batch_metrics(loss.item())
-            if batch_idx % 3 == 0 and batch_idx > 0:
-                break  # Temporary break for debugging
         if self.rank == 0:
             pbar.close()
 
@@ -304,8 +302,6 @@ class NGISTrainer:
                 if self.rank == 0:
                     pbar.update(1)
                     pbar.set_postfix({"val_loss": loss.item()})
-                if batch_idx % 3 == 0 and batch_idx > 0:
-                    break
         # Close progress bar
         if self.rank == 0:
             pbar.close()
@@ -339,6 +335,9 @@ class NGISTrainer:
 
     def _save_checkpoint(self, val_loss: float):
         """Save training checkpoint."""
+        # Ensure val_loss is a float to avoid type comparison errors
+        val_loss = float(val_loss)
+
         checkpoint = {
             "epoch": self.current_epoch,
             "global_step": self.global_step,
@@ -362,7 +361,7 @@ class NGISTrainer:
 
         # Update best loss
         if val_loss < self.best_loss:
-            self.best_loss = val_loss
+            self.best_loss = float(val_loss)
 
     def _load_checkpoint(self):
         """Load training checkpoint."""
@@ -386,6 +385,9 @@ class NGISTrainer:
 
     def _should_stop_early(self, val_loss: float) -> bool:
         """Check if training should stop early."""
+        # Ensure val_loss is a float to avoid type comparison errors
+        val_loss = float(val_loss)
+
         if hasattr(self.config.training, "early_stopping_patience"):
             patience = self.config.training.early_stopping_patience
             if val_loss >= self.best_loss:

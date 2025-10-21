@@ -83,7 +83,10 @@ class CheckpointManager:
 
         # Save checkpoint (convert Path to string for torch.save)
         torch.save(checkpoint, str(checkpoint_path))
-        
+
+        # Ensure metric is a float to avoid type comparison errors
+        metric = float(metric)
+
         # Update best model tracking
         if is_best or metric < self.best_metric:
             self.best_metric = metric

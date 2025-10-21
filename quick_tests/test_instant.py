@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """INSTANT TEST - Just check configuration"""
 import sys
-sys.path.insert(0, '.')
+sys.path.insert(0, '..')
 
 from utils.config import Config
 
-config = Config.from_yaml('configs/ds003766.yaml')
+config = Config.from_yaml('../configs/ds003766.yaml')
 
 print("Configuration Check:")
 print(f"  Data channels: {config.data.channels}")
