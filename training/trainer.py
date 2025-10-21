@@ -93,10 +93,12 @@ class NGISTrainer:
 
         # Wrap with DDP if distributed
         if self.is_distributed:
+            # Use current device instead of rank for device_ids
+            current_device = torch.cuda.current_device()
             self.model = DDP(
                 self.model,
-                device_ids=[self.rank],
-                output_device=self.rank,
+                device_ids=[current_device],
+                output_device=current_device,
                 find_unused_parameters=True,
             )
 
