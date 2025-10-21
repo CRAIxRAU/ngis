@@ -176,38 +176,45 @@ class EEGLoader:
     def load_directory(
         self,
         data_dir: Union[str, Path],
-        file_pattern: str = "*.set"
+        file_pattern: str = "*.set",
+        rank: int = 0,
+        world_size: int = 1
     ) -> Dict[str, mne.io.Raw]:
         """
-        Load all EEG files from a directory.
-        
+        Load EEG files from a directory, sharded by rank for distributed training.
+
         Args:
             data_dir: Directory containing EEG files.
             file_pattern: Glob pattern for file selection.
-            
+            rank: Process rank for distributed training (0 to world_size-1).
+            world_size: Total number of processes in distributed training.
+
         Returns:
-            Dictionary mapping filenames to Raw objects.
+            Dictionary mapping filenames to Raw objects (only files for this rank).
         """
         data_dir = Path(data_dir)
         if not data_dir.exists():
             raise FileNotFoundError(f"Data directory not found: {data_dir}")
-        
-        files = list(data_dir.glob(file_pattern))
+
+        files = sorted(list(data_dir.glob(file_pattern)))
         if not files:
             raise ValueError(f"No files matching pattern '{file_pattern}' found in {data_dir}")
-        
-        logger.info(f"Found {len(files)} EEG files in {data_dir}")
-        
+
+        # Shard files across ranks
+        files_for_rank = [f for idx, f in enumerate(files) if idx % world_size == rank]
+
+        logger.info(f"Rank {rank}/{world_size}: Found {len(files)} total files, loading {len(files_for_rank)} files")
+
         raw_data = {}
-        for file_path in files:
+        for file_path in files_for_rank:
             try:
                 raw = self.load_file(file_path)
                 raw_data[file_path.stem] = raw
             except Exception as e:
                 logger.error(f"Failed to load {file_path}: {e}")
                 continue
-        
-        logger.info(f"Successfully loaded {len(raw_data)} files")
+
+        logger.info(f"Rank {rank}: Successfully loaded {len(raw_data)} files")
         return raw_data
     
     def get_data_array(self, raw: mne.io.Raw) -> np.ndarray:
