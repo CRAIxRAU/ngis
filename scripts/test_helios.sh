@@ -1,18 +1,18 @@
-#!/bin/bash
+#!/bin/bash -l
 #SBATCH --job-name=ngis_test
-#SBATCH --partition=plgrid-gpu-a100
-#SBATCH --account=plgghack2025bioart-gpu-a100
+#SBATCH --account=plghack2025bioart-gpu-gh200
+#SBATCH --partition=plgrid-gpu-gh200
 #SBATCH --nodes=1
-#SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --mem=50GB
-#SBATCH --gres=gpu:1
+#SBATCH --ntasks-per-node=1
+#SBATCH --gpus-per-task=4
+#SBATCH --cpus-per-task=32
+#SBATCH --mem=200GB
 #SBATCH --time=01:00:00
 #SBATCH --output=logs/ngis_test_%j.out
 #SBATCH --error=logs/ngis_test_%j.err
 
 # Helios cluster testing script for NGIS model
-# Uses single GPU for inference
+# Allocates 4 GPUs (matching training resources), but uses only 1 GPU for inference
 
 echo "=========================================="
 echo "NGIS Model Testing"
@@ -21,13 +21,16 @@ echo "Node: $SLURM_NODELIST"
 echo "Started at: $(date)"
 echo "=========================================="
 
-# Load modules
-module purge
-module load CUDA/12.8
-module load PyTorch/2.8.0-CUDA-12.8
+# Load ML bundle module (same as training)
+echo "Loading ML-bundle module..."
+module add ML-bundle/25.04
 
-# Activate virtual environment
-source /net/storage/pr3/plgrid/plgghack2025bioart/venv/pytorch/bin/activate
+# Virtual environment path (same as training)
+NGIS_DIR=$(pwd)
+VENV_PATH="$(dirname "$NGIS_DIR")/venv/pytorch"
+
+echo "Activating virtual environment..."
+source "$VENV_PATH/bin/activate"
 
 # Change to working directory
 cd $SLURM_SUBMIT_DIR
