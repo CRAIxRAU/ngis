@@ -198,36 +198,36 @@ def main():
         logger.error(f"Failed to initialize trainer: {e}")
         sys.exit(1)
 
-    # Create dataloaders
+    # Create dataloaders with proper train/val/test splits
     try:
-        logger.info("Creating dataloaders...")
+        logger.info("Creating dataloaders with subject-level splits...")
 
         # Get optional max_duration for fast testing
         max_duration = getattr(config.data, 'max_duration', None)
+        
+        # Get splits configuration path
+        splits_config = getattr(config.data, 'splits_config', 'configs/splits.yaml')
 
+        # Create TRAIN dataloader - uses subjects from 'train' split
         train_dataloader = create_training_dataloader(
             data_path=config.data.data_path,
             batch_size=config.data.batch_size,
             segment_length=config.data.segment_length,
             overlap=config.data.overlap,
-            augment=config.data.augment,
+            augment=config.data.augment,  # Augment training data
             num_workers=config.data.num_workers,
             distributed=is_distributed,
             rank=args.rank,
             world_size=args.world_size,
             channel_selection_strategy=config.data.channel_selection_strategy,
             target_channels=config.data.channels,
-            max_duration=max_duration
+            max_duration=max_duration,
+            split='train',  # FIXED: Use 'train' split
+            splits_config_path=splits_config
         )
 
-        # For validation, use smaller subset (only first 10% of data for speed)
-        validation_split = getattr(config.data, 'validation_split', 0.1)
-        val_max_duration = max_duration * validation_split if max_duration else None
-
-        # If no max_duration set, use 10% of full data (95 seconds instead of 953)
-        if val_max_duration is None:
-            val_max_duration = 95.0  # ~10% of 953 seconds
-
+        # Create VALIDATION dataloader - uses subjects from 'validation' split
+        # FIXED: No more data leakage - validation uses completely different subjects
         val_dataloader = create_training_dataloader(
             data_path=config.data.data_path,
             batch_size=config.data.batch_size,
@@ -240,12 +240,15 @@ def main():
             world_size=args.world_size,
             channel_selection_strategy=config.data.channel_selection_strategy,
             target_channels=config.data.channels,
-            max_duration=val_max_duration
+            max_duration=max_duration,
+            split='validation',  # FIXED: Use 'validation' split
+            splits_config_path=splits_config
         )
 
         # Set dataloaders on trainer
         trainer.set_dataloaders(train_dataloader, val_dataloader)
         logger.info(f"Created dataloaders: {len(train_dataloader)} train batches, {len(val_dataloader)} val batches")
+        logger.info("FIXED: Train and validation now use different subjects - proper generalization assessment!")
     except Exception as e:
         logger.error(f"Failed to create dataloaders: {e}")
         sys.exit(1)

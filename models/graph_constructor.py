@@ -105,12 +105,17 @@ class GraphConstructor(nn.Module):
             raise ValueError(f"Unknown graph type: {self.graph_type}")
 
     def _construct_functional_graph(self, eeg_data: torch.Tensor) -> Union[Data, Batch]:
-        """Construct functional graph based on EEG connectivity."""
+        """Construct functional graph based on EEG connectivity.
+        
+        FIXED: Now properly handles batch dimension by creating separate graphs
+        for each sample and batching them with PyTorch Geometric's Batch.
+        """
         batch_size, n_channels, _ = eeg_data.shape
 
         graphs = []
         for sample_idx in range(batch_size):
-            sample = eeg_data[sample_idx]
+            # Process each sample individually to preserve batch dimension
+            sample = eeg_data[sample_idx]  # (n_channels, seq_len)
 
             connectivity_matrix = self._compute_connectivity_matrix(sample)
             adjacency_matrix = self._threshold_connectivity(connectivity_matrix)
@@ -126,6 +131,7 @@ class GraphConstructor(nn.Module):
                 edge_index = edge_index.to(eeg_data.device)
                 edge_weight = connectivity_matrix[edge_index[0], edge_index[1]]
 
+            # Create node features for this single sample
             node_features = self._create_node_features(sample)
 
             graph = Data(
@@ -135,6 +141,7 @@ class GraphConstructor(nn.Module):
             )
             graphs.append(graph)
 
+        # Batch all graphs together
         if len(graphs) == 1:
             self.current_graph = graphs[0]
             return graphs[0]

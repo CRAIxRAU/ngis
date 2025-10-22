@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
+import numpy as np
 import torch
 import torch.distributed as dist
 import torch.nn as nn
@@ -24,6 +25,7 @@ from training.optimizer import NGISOptimizer
 from training.scheduler import NGISScheduler
 from utils.checkpointing import CheckpointManager
 from utils.logging import setup_logging
+from utils.metrics import compute_all_metrics, format_metrics_for_logging
 
 logger = logging.getLogger(__name__)
 
@@ -164,14 +166,14 @@ class NGISTrainer:
             # Train for one epoch
             train_loss = self._train_epoch()
 
-            # Validate
-            val_loss = self._validate_epoch()
+            # Validate and compute metrics
+            val_loss, val_metrics = self._validate_epoch()
 
             # Update scheduler
             self.scheduler.step(val_loss)
 
-            # Log progress
-            self._log_epoch(epoch, train_loss, val_loss)
+            # Log progress with metrics
+            self._log_epoch(epoch, train_loss, val_loss, val_metrics)
 
             # Save checkpoint
             if self.rank == 0:  # Only save on main process
@@ -252,19 +254,21 @@ class NGISTrainer:
             # Log batch metrics
             if self.global_step % self.config.logging.log_frequency == 0:
                 self._log_batch_metrics(loss.item())
-            if batch_idx % 3 == 0 and batch_idx > 0:
-                break  # Temporary break for debugging
+        
         if self.rank == 0:
             pbar.close()
 
         return float(total_loss / num_batches)
 
-    def _validate_epoch(self) -> float:
-        """Validate for one epoch."""
+    def _validate_epoch(self) -> Tuple[float, Dict[str, float]]:
+        """Validate for one epoch and compute comprehensive metrics."""
         self.model.eval()
 
         total_loss = 0.0
         num_batches = 0
+        
+        # Accumulate metrics across batches
+        accumulated_metrics = {}
 
         # Create progress bar for validation
         if self.rank == 0:
@@ -280,6 +284,7 @@ class NGISTrainer:
                 range_push(f"Val Batch {batch_idx} processing")
                 batch = self._move_batch_to_device(batch)
                 range_pop()  # End of batch processing
+                
                 # Forward pass
                 range_push(f"Val Batch {batch_idx} forward pass")
                 outputs = self.model(
@@ -288,6 +293,7 @@ class NGISTrainer:
                     return_graph=True,
                 )
                 range_pop()  # End of forward pass
+                
                 # Calculate loss
                 range_push(f"Val Batch {batch_idx} loss calculation")
                 loss = self.loss_function(
@@ -296,21 +302,43 @@ class NGISTrainer:
                     spike_trains=outputs["spike_trains"],
                     graph_data=outputs["graph_data"],
                 )
+                range_pop()  # End of loss calculation
+
+                # Compute validation metrics
+                range_push(f"Val Batch {batch_idx} metrics computation")
+                batch_metrics = compute_all_metrics(
+                    real_eeg=batch["eeg"],
+                    simulated_eeg=outputs["eeg_output"],
+                    spike_trains=outputs["spike_trains"],
+                    graph_data=outputs["graph_data"]
+                )
+                
+                # Accumulate metrics
+                for key, value in batch_metrics.items():
+                    if key not in accumulated_metrics:
+                        accumulated_metrics[key] = []
+                    accumulated_metrics[key].append(value)
+                range_pop()  # End of metrics computation
 
                 total_loss += loss.item()
                 num_batches += 1
-                range_pop()  # End of loss calculation
+                
                 # Update progress bar
                 if self.rank == 0:
                     pbar.update(1)
-                    pbar.set_postfix({"val_loss": loss.item()})
-                if batch_idx % 3 == 0 and batch_idx > 0:
-                    break
+                    pbar.set_postfix({
+                        "val_loss": loss.item(),
+                        "corr": batch_metrics.get('mean_correlation', 0.0)
+                    })
+        
         # Close progress bar
         if self.rank == 0:
             pbar.close()
 
-        return float(total_loss / num_batches)
+        # Average accumulated metrics
+        avg_metrics = {k: float(np.mean(v)) for k, v in accumulated_metrics.items()}
+        
+        return float(total_loss / num_batches), avg_metrics
 
     def _move_batch_to_device(self, batch: Dict) -> Dict:
         """Move batch to device."""
@@ -322,8 +350,9 @@ class NGISTrainer:
                 device_batch[key] = value
         return device_batch
 
-    def _log_epoch(self, epoch: int, train_loss: float, val_loss: float):
-        """Log epoch metrics."""
+    def _log_epoch(self, epoch: int, train_loss: float, val_loss: float, 
+                   val_metrics: Optional[Dict[str, float]] = None):
+        """Log epoch metrics including validation metrics."""
         if self.rank == 0:
             logger.info(
                 f"Epoch {epoch}: "
@@ -331,6 +360,11 @@ class NGISTrainer:
                 f"Val Loss: {val_loss:.4f}, "
                 f"LR: {self.scheduler.get_last_lr()[0]:.6f}"
             )
+            
+            # Log detailed validation metrics
+            if val_metrics:
+                logger.info("Validation Metrics:")
+                logger.info(format_metrics_for_logging(val_metrics, prefix="  "))
 
     def _log_batch_metrics(self, loss: float):
         """Log batch metrics."""

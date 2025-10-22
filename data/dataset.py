@@ -42,6 +42,7 @@ class EEGDataset(Dataset):
         max_duration: Optional[float] = None,
         rank: int = 0,
         world_size: int = 1,
+        split_subjects: Optional[set] = None,
         **preprocessor_kwargs
     ):
         """
@@ -67,6 +68,7 @@ class EEGDataset(Dataset):
         self.sampling_rate = sampling_rate
         self.rank = rank
         self.world_size = world_size
+        self.split_subjects = split_subjects
 
         # Initialize loader and preprocessor
         self.loader = EEGLoader(
@@ -102,7 +104,12 @@ class EEGDataset(Dataset):
                     self.raw_data = {}
             else:
                 # Directory - shard files across ranks
-                self.raw_data = self.loader.load_directory(path, rank=self.rank, world_size=self.world_size)
+                self.raw_data = self.loader.load_directory(
+                    path, 
+                    rank=self.rank, 
+                    world_size=self.world_size,
+                    split_subjects=self.split_subjects
+                )
         else:
             # List of files - shard across ranks
             self.raw_data = {}

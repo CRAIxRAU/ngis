@@ -137,10 +137,12 @@ def create_training_dataloader(
     distributed: bool = False,
     rank: int = 0,
     world_size: int = 1,
+    split: Optional[str] = None,
+    splits_config_path: str = "configs/splits.yaml",
     **dataset_kwargs
 ) -> DataLoader:
     """
-    Create DataLoader for training.
+    Create DataLoader for training with proper train/val/test splits.
     
     Args:
         data_path: Path to EEG data.
@@ -152,11 +154,21 @@ def create_training_dataloader(
         distributed: Whether using distributed training.
         rank: Rank of current process.
         world_size: Total number of processes.
+        split: 'train', 'validation', or 'test'. If None, uses all data.
+        splits_config_path: Path to splits configuration file.
         **dataset_kwargs: Additional arguments for EEGDataset.
         
     Returns:
         DataLoader for training.
     """
+    # Load splits if specified
+    split_subjects = None
+    if split is not None:
+        from utils.splits import load_splits
+        splits = load_splits(splits_config_path)
+        split_subjects = set(splits.get(split, []))
+        logger.info(f"Creating dataloader for split '{split}' with {len(split_subjects)} subjects")
+    
     # Create dataset with rank and world_size for data sharding
     dataset = EEGDataset(
         data_path=data_path,
@@ -165,6 +177,7 @@ def create_training_dataloader(
         augment=augment,
         rank=rank,
         world_size=world_size,
+        split_subjects=split_subjects,
         **dataset_kwargs
     )
     

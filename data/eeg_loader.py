@@ -178,7 +178,8 @@ class EEGLoader:
         data_dir: Union[str, Path],
         file_pattern: str = "*.set",
         rank: int = 0,
-        world_size: int = 1
+        world_size: int = 1,
+        split_subjects: Optional[set] = None
     ) -> Dict[str, mne.io.Raw]:
         """
         Load EEG files from a directory, sharded by rank for distributed training.
@@ -188,10 +189,14 @@ class EEGLoader:
             file_pattern: Glob pattern for file selection.
             rank: Process rank for distributed training (0 to world_size-1).
             world_size: Total number of processes in distributed training.
+            split_subjects: Optional set of subject IDs to include (for train/val/test splits).
+                          If None, all subjects are included.
 
         Returns:
             Dictionary mapping filenames to Raw objects (only files for this rank).
         """
+        from utils.splits import get_subject_id_from_filename
+        
         data_dir = Path(data_dir)
         if not data_dir.exists():
             raise FileNotFoundError(f"Data directory not found: {data_dir}")
@@ -199,6 +204,20 @@ class EEGLoader:
         files = sorted(list(data_dir.glob(file_pattern)))
         if not files:
             raise ValueError(f"No files matching pattern '{file_pattern}' found in {data_dir}")
+
+        # Filter by split subjects if provided
+        if split_subjects is not None:
+            filtered_files = []
+            for file_path in files:
+                subject_id = get_subject_id_from_filename(file_path.name)
+                if subject_id in split_subjects:
+                    filtered_files.append(file_path)
+            logger.info(f"Filtered {len(files)} files -> {len(filtered_files)} files for subjects {sorted(split_subjects)}")
+            files = filtered_files
+
+        if not files:
+            logger.warning(f"No files found after split filtering")
+            return {}
 
         # Shard files across ranks
         files_for_rank = [f for idx, f in enumerate(files) if idx % world_size == rank]

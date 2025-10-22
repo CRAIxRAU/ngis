@@ -84,17 +84,15 @@ python -c "import torch; print(f'PyTorch version: {torch.__version__}'); print(f
 echo "Verifying MNE installation..."
 python -c "import mne; print(f'MNE version: {mne.__version__}')"
 
-# Remove old checkpoints to avoid compatibility issues after merge
+# Remove old checkpoints to avoid compatibility issues
 rm -rf checkpoints/*.pth
 
 echo "=========================================="
-echo "Starting distributed training on 4× GH200 GPUs"
+echo "Starting NGIS training on 4× GH200 GPUs"
 echo "Config: configs/cluster_full.yaml"
-echo "Data sharding: Each GPU loads ~8 subjects (31 total / 4 GPUs)"
 echo "=========================================="
 
 # Run distributed training using torchrun
-# Using standalone mode since we're on a single node
 torchrun \
     --standalone \
     --nnodes=1 \
