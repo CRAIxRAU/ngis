@@ -277,13 +277,39 @@ class GraphConstructor(nn.Module):
         return edge_index
     
     def _create_node_features(self, eeg_sample: torch.Tensor) -> torch.Tensor:
-        """Create node features from a single EEG sample."""
+        """
+        Create node features from a single EEG sample using temporal windowing.
+
+        Instead of averaging over the entire time window (losing temporal detail),
+        we compute statistics over multiple shorter windows to preserve dynamics.
+        """
         if eeg_sample.dim() != 2:
             raise ValueError("Expected eeg_sample with shape (channels, seq_len)")
 
-        # Down-sample the temporal dimension to a fixed feature size
+        channels, seq_len = eeg_sample.shape
+
+        # Use 4 temporal windows (250ms each for 1-second segments at 1000Hz)
+        n_windows = 4
+        window_size = seq_len // n_windows
+
+        window_features = []
+        for i in range(n_windows):
+            start_idx = i * window_size
+            end_idx = start_idx + window_size if i < n_windows - 1 else seq_len
+            window = eeg_sample[:, start_idx:end_idx]
+
+            # Compute statistics for each window
+            window_mean = window.mean(dim=-1, keepdim=True)
+            window_std = window.std(dim=-1, keepdim=True)
+
+            window_features.append(torch.cat([window_mean, window_std], dim=-1))
+
+        # Concatenate all window features: (channels, n_windows * 2)
+        temporal_features = torch.cat(window_features, dim=-1)
+
+        # Interpolate to fixed feature dimension
         channel_features = torch.nn.functional.interpolate(
-            eeg_sample.unsqueeze(0),
+            temporal_features.unsqueeze(0),
             size=self.feature_dim,
             mode="linear",
             align_corners=False

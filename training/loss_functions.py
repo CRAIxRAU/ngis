@@ -54,12 +54,44 @@ class SpikingLoss(nn.Module):
             raise ValueError(f"Unknown loss type: {self.loss_type}")
 
 
-class BiologicalLoss(nn.Module):
-    """Loss function for biological constraints."""
-    
+class CorrelationLoss(nn.Module):
+    """Loss function for temporal correlation between predicted and target EEG."""
+
     def __init__(self):
         super().__init__()
-    
+
+    def forward(self, pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
+        """
+        Calculate correlation loss (1 - mean correlation).
+
+        Args:
+            pred: Predicted EEG (batch, channels, time)
+            target: Target EEG (batch, channels, time)
+
+        Returns:
+            Correlation loss (lower is better)
+        """
+        # Center the signals (remove mean)
+        pred_centered = pred - pred.mean(dim=-1, keepdim=True)
+        target_centered = target - target.mean(dim=-1, keepdim=True)
+
+        # Calculate correlation
+        numerator = (pred_centered * target_centered).sum(dim=-1)
+        pred_std = torch.sqrt((pred_centered ** 2).sum(dim=-1) + 1e-8)
+        target_std = torch.sqrt((target_centered ** 2).sum(dim=-1) + 1e-8)
+
+        correlation = numerator / (pred_std * target_std)
+
+        # Return 1 - mean correlation (so minimizing loss maximizes correlation)
+        return 1.0 - correlation.mean()
+
+
+class BiologicalLoss(nn.Module):
+    """Loss function for biological constraints."""
+
+    def __init__(self):
+        super().__init__()
+
     def forward(self, model) -> torch.Tensor:
         """Calculate biological constraint loss."""
         # Placeholder for biological constraints
@@ -72,17 +104,20 @@ class CombinedLoss(nn.Module):
     def __init__(
         self,
         eeg_weight: float = 1.0,
+        correlation_weight: float = 1.0,
         spiking_weight: float = 0.1,
         biological_weight: float = 0.01,
         regularization_weight: float = 0.001
     ):
         super().__init__()
         self.eeg_weight = eeg_weight
+        self.correlation_weight = correlation_weight
         self.spiking_weight = spiking_weight
         self.biological_weight = biological_weight
         self.regularization_weight = regularization_weight
 
         self.eeg_loss = EEGLoss()
+        self.correlation_loss = CorrelationLoss()
         self.spiking_loss = SpikingLoss()
         self.biological_loss = BiologicalLoss()
 
@@ -99,8 +134,11 @@ class CombinedLoss(nn.Module):
         model = None
     ) -> torch.Tensor:
         """Calculate combined loss."""
-        # EEG reconstruction loss
+        # EEG reconstruction loss (MSE)
         eeg_loss = self.eeg_loss(real_eeg, simulated_eeg)
+
+        # Correlation loss (temporal similarity)
+        correlation_loss = self.correlation_loss(simulated_eeg, real_eeg)
 
         # Spiking dynamics loss
         spiking_loss = self.spiking_loss(spike_trains)
@@ -114,6 +152,7 @@ class CombinedLoss(nn.Module):
         # Combined loss
         total_loss = (
             self.eeg_weight * eeg_loss +
+            self.correlation_weight * correlation_loss +
             self.spiking_weight * spiking_loss +
             self.biological_weight * biological_loss +
             self.regularization_weight * regularization_loss
@@ -129,6 +168,7 @@ class CombinedLoss(nn.Module):
             logger.debug(
                 f"Loss components: "
                 f"EEG={eeg_loss.item():.4f}, "
+                f"Corr={correlation_loss.item():.4f}, "
                 f"Spiking={spiking_loss.item():.4f}, "
                 f"Bio={biological_loss.item():.4f}, "
                 f"Reg={regularization_loss.item():.4f}, "
