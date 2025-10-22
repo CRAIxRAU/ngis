@@ -30,9 +30,11 @@ data:
   augment: false  # Disable augmentation to save compute
   validation_split: 0.15  # Use 15% for validation
 
-  # NO max_duration limit - loads full dataset!
-  # Each subject is ~15min = 900sec = 900 segments per subject
-  # 31 subjects × 900 segments = ~27,900 total segments
+  # Memory-optimized max_duration limit
+  # Limit each subject to 200 seconds to prevent OOM
+  # 31 subjects × 200 segments = ~6,200 total segments (vs 27,900 full)
+  # This maintains equal distribution via DistributedSampler while fitting in 200GB RAM
+  max_duration: 200.0  # seconds per subject
 
 # Model configuration
 model:

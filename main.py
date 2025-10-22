@@ -223,7 +223,8 @@ def main():
             target_channels=config.data.channels,
             max_duration=max_duration,
             split='train',  # FIXED: Use 'train' split
-            splits_config_path=splits_config
+            splits_config_path=splits_config,
+            shard_across_ranks=False  # Use DistributedSampler with drop_last=True for even distribution
         )
 
         # Create VALIDATION dataloader - uses subjects from 'validation' split
@@ -242,7 +243,8 @@ def main():
             target_channels=config.data.channels,
             max_duration=max_duration,
             split='validation',  # FIXED: Use 'validation' split
-            splits_config_path=splits_config
+            splits_config_path=splits_config,
+            shard_across_ranks=False  # Use DistributedSampler with drop_last=True for even distribution
         )
 
         # Set dataloaders on trainer
