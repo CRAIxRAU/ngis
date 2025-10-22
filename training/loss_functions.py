@@ -5,9 +5,12 @@ Implements loss functions for EEG reconstruction, spiking dynamics,
 and biological constraints for the G-SNN training.
 """
 
+import logging
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+logger = logging.getLogger(__name__)
 
 
 class EEGLoss(nn.Module):
@@ -38,9 +41,15 @@ class SpikingLoss(nn.Module):
         """Calculate spiking loss."""
         if self.loss_type == "rate":
             # Encourage reasonable firing rates
-            firing_rates = spike_trains.mean(dim=-1)
+            firing_rates = spike_trains.mean(dim=-1)  # (batch, neurons)
             target_rate = 0.1  # 10% firing rate
-            return F.mse_loss(firing_rates, torch.full_like(firing_rates, target_rate))
+
+            # FIXED: Use mean over neurons to prevent explosion with large neuron counts
+            # Old: (256 neurons) × (0.9)² = ~200 loss when all spike
+            # New: mean((0.9)²) = 0.81 loss regardless of neuron count
+            loss = F.mse_loss(firing_rates, torch.full_like(firing_rates, target_rate), reduction='mean')
+
+            return loss
         else:
             raise ValueError(f"Unknown loss type: {self.loss_type}")
 
@@ -72,10 +81,14 @@ class CombinedLoss(nn.Module):
         self.spiking_weight = spiking_weight
         self.biological_weight = biological_weight
         self.regularization_weight = regularization_weight
-        
+
         self.eeg_loss = EEGLoss()
         self.spiking_loss = SpikingLoss()
         self.biological_loss = BiologicalLoss()
+
+        # Diagnostic counters
+        self.step_count = 0
+        self.log_every = 100  # Log every N steps
     
     def forward(
         self,
@@ -88,16 +101,16 @@ class CombinedLoss(nn.Module):
         """Calculate combined loss."""
         # EEG reconstruction loss
         eeg_loss = self.eeg_loss(real_eeg, simulated_eeg)
-        
+
         # Spiking dynamics loss
         spiking_loss = self.spiking_loss(spike_trains)
-        
+
         # Biological constraints loss
         biological_loss = self.biological_loss(model) if model is not None else torch.tensor(0.0, device=real_eeg.device)
-        
+
         # Regularization loss
         regularization_loss = self._calculate_regularization(model, real_eeg.device)
-        
+
         # Combined loss
         total_loss = (
             self.eeg_weight * eeg_loss +
@@ -105,14 +118,45 @@ class CombinedLoss(nn.Module):
             self.biological_weight * biological_loss +
             self.regularization_weight * regularization_loss
         )
-        
+
+        # Diagnostic logging every N steps
+        self.step_count += 1
+        if self.step_count % self.log_every == 0:
+            # Calculate spike statistics
+            spike_rate = spike_trains.mean().item()
+            spike_std = spike_trains.std().item()
+
+            logger.debug(
+                f"Loss components: "
+                f"EEG={eeg_loss.item():.4f}, "
+                f"Spiking={spiking_loss.item():.4f}, "
+                f"Bio={biological_loss.item():.4f}, "
+                f"Reg={regularization_loss.item():.4f}, "
+                f"Total={total_loss.item():.4f} | "
+                f"Spike rate: {spike_rate:.3f}±{spike_std:.3f}"
+            )
+
+            # Warn on extreme values
+            if total_loss.item() > 10.0:
+                logger.warning(f"⚠️  High loss detected: {total_loss.item():.2f}")
+            if spike_rate < 0.001:
+                logger.warning(f"⚠️  Neurons not spiking (rate={spike_rate:.4f})")
+            if spike_rate > 0.5:
+                logger.warning(f"⚠️  Excessive spiking (rate={spike_rate:.4f})")
+
         return total_loss
     
     def _calculate_regularization(self, model, device: torch.device) -> torch.Tensor:
-        """Calculate regularization loss."""
+        """Calculate regularization loss (proper L2)."""
         if model is None:
             return torch.tensor(0.0, device=device)
+
+        # FIXED: Proper L2 regularization = sum of squared parameters
+        # Old: sum of L2 norms (unbounded, wrong)
+        # New: sum of squared weights (standard L2 regularization)
         l2_loss = 0.0
         for param in model.parameters():
-            l2_loss += torch.norm(param, p=2)
+            if param.requires_grad:
+                l2_loss += param.pow(2).sum()
+
         return l2_loss 

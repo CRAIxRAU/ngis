@@ -245,6 +245,13 @@ class NGISTrainer:
                 spike_trains=outputs["spike_trains"],
                 graph_data=outputs["graph_data"],
             )
+
+            # FIXED: Clamp loss to prevent training instability
+            # If loss > 100, likely numerical issue - clamp and warn
+            if loss.item() > 100.0:
+                logger.warning(f"⚠️  Extreme loss detected: {loss.item():.2f}, clamping to 100.0")
+                loss = torch.clamp(loss, max=100.0)
+
             logger.debug(f"Loss calculated: {loss.item()}")
             range_pop()  # End of loss calculation
             # Backward pass
