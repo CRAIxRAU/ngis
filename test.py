@@ -284,7 +284,7 @@ def main():
         target_channels=config.data.channels,
         channel_selection_strategy=config.data.get('channel_selection_strategy', 'uniform_spatial'),
         max_duration=config.data.get('max_duration', None),
-        preload=config.data.get('preload', False),
+        preload=True,  # Test set is small (5 subjects), safe to preload
         split='test',  # Use test split
         splits_config_path=splits_config
     )
