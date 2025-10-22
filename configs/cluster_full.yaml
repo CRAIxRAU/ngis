@@ -9,8 +9,8 @@ data:
   raw_data_path: "/net/storage/pr3/plgrid/plgghack2025bioart/data/raw"
 
   # Memory-efficient batch settings
-  batch_size: 4  # Small batch to avoid OOM (4 per GPU = 16 total with 4 GPUs)
-  num_workers: 2  # Minimal workers to reduce memory overhead
+  batch_size: 2  # Very small batch to avoid OOM (2 per GPU = 8 total with 4 GPUs)
+  num_workers: 1  # Single worker per GPU to minimize memory overhead
 
   # Segmentation settings
   segment_length: 1000  # 1 second segments (1000 samples @ 1000 Hz)
@@ -18,9 +18,12 @@ data:
 
   # Sampling and channels
   sampling_rate: 1000.0  # Dataset sampling rate
-  channels: 128  # Target channel count (ds003766 has 129, will drop 1)
+  channels: 129  # Actual channel count in ds003766 (128 EEG + 1 control)
   original_channels: 129  # Actual channels in dataset
   channel_selection_strategy: "uniform_spatial"  # Use uniform spatial selection
+
+  # Memory optimization - disable preloading to avoid OOM
+  preload: false  # DO NOT preload data into memory
 
   # Processing flags
   preprocess: true
@@ -33,7 +36,7 @@ data:
 
 # Model configuration
 model:
-  n_channels: 128
+  n_channels: 129  # MUST match data channels (128 EEG + 1 control)
   n_neurons: 256
   n_layers: 3
   hidden_dim: 64
@@ -58,7 +61,7 @@ model:
 training:
   epochs: 50  # Full training
   learning_rate: 0.001
-  batch_size: 4  # Match data batch_size
+  batch_size: 2  # Match data batch_size
   output_dir: "outputs/"
   save_frequency: 5  # Save every 5 epochs
   log_frequency: 50  # Log less frequently to reduce I/O
