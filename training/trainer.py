@@ -236,13 +236,29 @@ class NGISTrainer:
             )
             logger.debug("Forward pass completed")
             range_pop()  # End of forward pass
+
+            # Sanity check model outputs
+            simulated_eeg = outputs["eeg_output"]
+            spike_trains = outputs["spike_trains"]
+
+            # Check for NaN/Inf in outputs
+            if torch.isnan(simulated_eeg).any() or torch.isinf(simulated_eeg).any():
+                logger.error(f"🔴 Model output contains NaN/Inf! Batch {batch_idx}")
+                logger.error(f"   Output range: [{simulated_eeg.min():.4f}, {simulated_eeg.max():.4f}]")
+                logger.error(f"   Spike rate: {spike_trains.mean().item():.4f}")
+                continue  # Skip this batch
+
+            # Warn on extreme outputs
+            if simulated_eeg.abs().max() > 10.0:
+                logger.warning(f"⚠️  Large model output: max={simulated_eeg.max():.4f}, min={simulated_eeg.min():.4f}")
+
             # Calculate loss
             logger.debug("Calculating loss")
             range_push(f"Batch {batch_idx} loss calculation")
             loss = self.loss_function(
                 real_eeg=batch["eeg"],
-                simulated_eeg=outputs["eeg_output"],
-                spike_trains=outputs["spike_trains"],
+                simulated_eeg=simulated_eeg,
+                spike_trains=spike_trains,
                 graph_data=outputs["graph_data"],
             )
 
@@ -259,10 +275,30 @@ class NGISTrainer:
             self.optimizer.zero_grad()
             loss.backward()
 
+            # Check for NaN/extreme gradients BEFORE clipping
+            max_grad = 0.0
+            nan_grads = False
+            for name, param in self.model.named_parameters():
+                if param.grad is not None:
+                    grad_norm = param.grad.norm().item()
+                    max_grad = max(max_grad, grad_norm)
+                    if torch.isnan(param.grad).any() or torch.isinf(param.grad).any():
+                        logger.error(f"🔴 NaN/Inf gradient in {name}! grad_norm: {grad_norm:.4f}")
+                        nan_grads = True
+
+            # Warn on extreme gradients
+            if max_grad > 10.0:
+                logger.warning(f"🔶 Large gradient detected: {max_grad:.2f} (will be clipped to 1.0)")
+            if nan_grads:
+                logger.error(f"🔴 NaN gradients detected! Skipping optimizer step.")
+                continue  # Skip this batch
+
             # Gradient clipping
-            torch.nn.utils.clip_grad_norm_(
+            grad_norm_before = torch.nn.utils.clip_grad_norm_(
                 self.model.parameters(), max_norm=1.0
             )
+            if grad_norm_before > 5.0:
+                logger.warning(f"⚠️  Clipped gradient norm: {grad_norm_before:.2f} → 1.0")
 
             # Optimizer step
             self.optimizer.step()

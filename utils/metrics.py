@@ -52,6 +52,17 @@ def compute_eeg_metrics(real_eeg: torch.Tensor, simulated_eeg: torch.Tensor) -> 
     correlations = []
     for ch in range(n_channels):
         try:
+            # Check if either signal is constant
+            real_std = np.std(real_np[ch])
+            sim_std = np.std(sim_np[ch])
+
+            if real_std < 1e-10:
+                logger.warning(f"Channel {ch}: Real EEG is constant (std={real_std:.2e})")
+                continue
+            if sim_std < 1e-10:
+                logger.debug(f"Channel {ch}: Simulated EEG is constant (std={sim_std:.2e}) - normal early in training")
+                continue
+
             corr, _ = pearsonr(real_np[ch], sim_np[ch])
             if not np.isnan(corr):
                 correlations.append(corr)
