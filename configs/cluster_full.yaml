@@ -18,7 +18,7 @@ data:
 
   # Sampling and channels
   sampling_rate: 1000.0  # Dataset sampling rate
-  channels: 129  # Actual channel count in ds003766 (128 EEG + 1 control)
+  channels: 128  # Target channel count (ds003766 has 129, selection drops control)
   original_channels: 129  # Actual channels in dataset
   channel_selection_strategy: "uniform_spatial"  # Use uniform spatial selection
 
@@ -36,7 +36,7 @@ data:
 
 # Model configuration
 model:
-  n_channels: 129  # MUST match data channels (128 EEG + 1 control)
+  n_channels: 128  # Match target channels after selection (control channel dropped)
   n_neurons: 256
   n_layers: 3
   hidden_dim: 64
