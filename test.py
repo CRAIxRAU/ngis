@@ -87,8 +87,9 @@ def load_model(checkpoint_path: str, config: Config, device: str) -> GSNN:
         dropout=model_config.dropout,
     ).to(device)
 
-    # Load checkpoint
-    checkpoint = torch.load(checkpoint_path, map_location=device)
+    # Load checkpoint (allow Config class for backward compatibility)
+    torch.serialization.add_safe_globals([Config])
+    checkpoint = torch.load(checkpoint_path, map_location=device, weights_only=False)
 
     # Handle DDP checkpoints (state_dict might have 'module.' prefix)
     state_dict = checkpoint.get('model_state_dict', checkpoint)
