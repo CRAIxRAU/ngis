@@ -168,8 +168,15 @@ class NGISTrainer:
 
             # Validate and compute metrics
             val_loss, val_metrics = self._validate_epoch()
+            
+            # CRITICAL: Synchronize validation loss across all ranks
+            # All ranks must see the same loss for scheduler/early stopping consistency
+            if self.is_distributed and dist.is_initialized():
+                loss_tensor = torch.tensor([val_loss], device=self.device)
+                dist.all_reduce(loss_tensor, op=dist.ReduceOp.AVG)
+                val_loss = loss_tensor.item()
 
-            # Update scheduler
+            # Update scheduler (all ranks must see same loss)
             self.scheduler.step(val_loss)
 
             # Log progress with metrics
@@ -179,9 +186,21 @@ class NGISTrainer:
             if self.rank == 0:  # Only save on main process
                 self._save_checkpoint(val_loss)
 
-            # Early stopping check
-            if self._should_stop_early(val_loss):
-                logger.info("Early stopping triggered")
+            # Early stopping check (must be synchronized across all ranks)
+            should_stop = self._should_stop_early(val_loss)
+            
+            # CRITICAL: Synchronize early stopping decision across all ranks
+            # If we don't sync, ranks may disagree and cause NCCL hangs
+            if self.is_distributed and dist.is_initialized():
+                # Convert to tensor for all_reduce
+                stop_tensor = torch.tensor([1 if should_stop else 0], device=self.device)
+                # All ranks get the maximum (if any rank wants to stop, all stop)
+                dist.all_reduce(stop_tensor, op=dist.ReduceOp.MAX)
+                should_stop = stop_tensor.item() == 1
+            
+            if should_stop:
+                if self.rank == 0:
+                    logger.info("Early stopping triggered")
                 break
         range_pop()  # End of training loop
 

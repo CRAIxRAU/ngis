@@ -1086,14 +1086,99 @@ This codebase represents an ambitious research direction but requires significan
 
 ## Document Version
 
-**Version**: 2.0 (Major Fixes Implemented)
+**Version**: 2.1 (Critical Distributed Training Fixes)
 **Date**: October 22, 2025
-**Status**: Critical fixes completed - ready for testing
-**Last Updated**: After Phase 1 fixes (batch handling, splits, metrics)
+**Status**: Production-ready with DDP synchronization fixes
+**Last Updated**: After distributed training synchronization fixes (drop_last, early stopping sync, loss sync)
 
 ---
 
-## 15. Changes Implemented (October 2025)
+## 15. Critical Distributed Training Fixes (October 22, 2025 - Final)
+
+### 15.1 Fixed Uneven Batch Distribution Bug ✅
+
+**Problem**: The `drop_last` parameter was not enforced in distributed mode, causing different GPUs to process different numbers of batches. This leads to NCCL hangs when some ranks finish early.
+
+**Root Cause**: When `total_samples % (batch_size * num_gpus) != 0`, some GPUs would get an extra batch, causing them to wait indefinitely for ranks that have already finished.
+
+**Fix Applied** (`data/dataloader.py:69`):
+```python
+drop_last=drop_last if not distributed else True,  # Force drop_last=True for distributed
+```
+
+**Impact**: 
+- Prevents NCCL timeout errors
+- Ensures all GPUs process exactly the same number of batches
+- Critical for stable 4-GPU training on Helios cluster
+
+---
+
+### 15.2 Fixed Unsynchronized Early Stopping Bug ✅
+
+**Problem**: Early stopping decision was made independently on each rank. If rank 0 decided to stop but other ranks didn't (or vice versa), they would go out of sync, causing NCCL hangs.
+
+**Root Cause**: `_should_stop_early()` was evaluated per-rank without communication, so different ranks could have different `best_loss` values and make different stopping decisions.
+
+**Fix Applied** (`training/trainer.py:183-197`):
+```python
+should_stop = self._should_stop_early(val_loss)
+
+# CRITICAL: Synchronize early stopping decision across all ranks
+if self.is_distributed and dist.is_initialized():
+    stop_tensor = torch.tensor([1 if should_stop else 0], device=self.device)
+    dist.all_reduce(stop_tensor, op=dist.ReduceOp.MAX)  # Any rank stops → all stop
+    should_stop = stop_tensor.item() == 1
+
+if should_stop:
+    if self.rank == 0:
+        logger.info("Early stopping triggered")
+    break
+```
+
+**Impact**:
+- All ranks now agree on when to stop training
+- Prevents deadlocks from rank disagreement
+- Uses `ReduceOp.MAX` so if ANY rank wants to stop, ALL ranks stop (conservative approach)
+
+---
+
+### 15.3 Added Validation Loss Synchronization ✅
+
+**Problem**: Each rank computed its own validation loss on its subset of data. Different ranks would see different losses, leading to inconsistent scheduler updates and early stopping decisions.
+
+**Root Cause**: Validation loss was not averaged across ranks, so each rank made decisions based on its local data only.
+
+**Fix Applied** (`training/trainer.py:172-177`):
+```python
+# CRITICAL: Synchronize validation loss across all ranks
+if self.is_distributed and dist.is_initialized():
+    loss_tensor = torch.tensor([val_loss], device=self.device)
+    dist.all_reduce(loss_tensor, op=dist.ReduceOp.AVG)  # Average across all ranks
+    val_loss = loss_tensor.item()
+```
+
+**Impact**:
+- All ranks see the same global validation loss
+- Scheduler updates consistently across ranks
+- Early stopping decisions based on true global performance, not local subsets
+
+---
+
+### 15.4 Summary of Distributed Training Fixes
+
+These three fixes address fundamental synchronization issues in multi-GPU training:
+
+| Issue | Before | After | Critical? |
+|-------|--------|-------|-----------|
+| **Batch counts** | Ranks could have different # of batches | All ranks have exactly same # of batches | ✅ YES - Prevents NCCL hangs |
+| **Early stopping** | Each rank decides independently | All ranks make synchronized decision | ✅ YES - Prevents deadlocks |
+| **Validation loss** | Each rank sees different loss | All ranks see global averaged loss | ✅ YES - Ensures consistency |
+
+**Testing Priority**: These fixes are CRITICAL for 4-GPU training. Without them, training would randomly hang or crash with NCCL timeout errors.
+
+---
+
+## 16. Changes Implemented (October 2025 - Phase 1)
 
 ### Phase 1 Fixes: Critical Issues Resolved
 

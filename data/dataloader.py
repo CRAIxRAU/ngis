@@ -52,18 +52,21 @@ def create_dataloader(
             dataset,
             num_replicas=world_size,
             rank=rank,
-            shuffle=shuffle
+            shuffle=shuffle,
+            drop_last=True  # Ensure all ranks have exactly same number of samples
         )
         shuffle = False  # Sampler handles shuffling
     
     # Create DataLoader
+    # CRITICAL: In distributed mode, MUST drop last batch to ensure all ranks have same number of batches
+    # This prevents NCCL hangs when ranks process different number of batches
     dataloader = DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers,
         pin_memory=pin_memory,
-        drop_last=drop_last,
+        drop_last=drop_last if not distributed else True,  # Force drop_last=True for distributed
         sampler=sampler,
         collate_fn=collate_eeg_batch
     )
@@ -169,14 +172,15 @@ def create_training_dataloader(
         split_subjects = set(splits.get(split, []))
         logger.info(f"Creating dataloader for split '{split}' with {len(split_subjects)} subjects")
     
-    # Create dataset with rank and world_size for data sharding
+    # Create dataset - when using DistributedSampler, don't pass rank/world_size
+    # The sampler will handle data sharding, not the dataset
     dataset = EEGDataset(
         data_path=data_path,
         segment_length=segment_length,
         overlap=overlap,
         augment=augment,
-        rank=rank,
-        world_size=world_size,
+        rank=0 if distributed else rank,  # Always 0 for distributed (sampler handles sharding)
+        world_size=1 if distributed else world_size,  # Always 1 for distributed
         split_subjects=split_subjects,
         **dataset_kwargs
     )
@@ -189,7 +193,8 @@ def create_training_dataloader(
         num_workers=num_workers,
         distributed=distributed,
         rank=rank,
-        world_size=world_size
+        world_size=world_size,
+        drop_last=distributed  # Drop last batch in distributed mode to avoid NCCL timeout
     )
 
 
