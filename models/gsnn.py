@@ -251,6 +251,12 @@ class GSNN(nn.Module):
             neuron_embeddings, size=seq_len, mode="linear", align_corners=False
         )
 
+        # FIXED: Scale up currents so neurons can actually spike
+        # Graph embeddings are typically ~[-1, 1], but LIF needs currents ~[10, 50]
+        # to cross threshold (v_rest=-65mV, v_threshold=-55mV, needs +10mV change)
+        # Scale by 30x to get currents in range that will drive spiking
+        neuron_currents = neuron_currents * 30.0
+
         return neuron_currents
 
     def _simulate_spiking(
