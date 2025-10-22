@@ -74,7 +74,7 @@ training:
 # Loss function configuration
 loss:
   eeg_weight: 1.0                 # MSE reconstruction loss
-  correlation_weight: 1.0         # Temporal correlation loss (NEW - optimizes correlation metric)
+  correlation_weight: 0.5         # Temporal correlation loss (reduced from 1.0 - gentler for early training)
   spiking_weight: 0.05            # Reduced from 0.1 - less constraint on spike patterns
   biological_weight: 0.01         # Biological constraints
   regularization_weight: 0.0001   # Reduced from 0.001 - lighter L2 regularization

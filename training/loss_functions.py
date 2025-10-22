@@ -77,10 +77,11 @@ class CorrelationLoss(nn.Module):
 
         # Calculate correlation
         numerator = (pred_centered * target_centered).sum(dim=-1)
-        pred_std = torch.sqrt((pred_centered ** 2).sum(dim=-1) + 1e-8)
-        target_std = torch.sqrt((target_centered ** 2).sum(dim=-1) + 1e-8)
+        pred_std = torch.sqrt((pred_centered ** 2).sum(dim=-1))
+        target_std = torch.sqrt((target_centered ** 2).sum(dim=-1))
 
-        correlation = numerator / (pred_std * target_std)
+        # Add eps to denominator for numerical stability
+        correlation = numerator / (pred_std * target_std + 1e-8)
 
         # Return 1 - mean correlation (so minimizing loss maximizes correlation)
         return 1.0 - correlation.mean()
