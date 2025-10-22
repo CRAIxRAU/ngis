@@ -171,16 +171,18 @@ def create_training_dataloader(
         splits = load_splits(splits_config_path)
         split_subjects = set(splits.get(split, []))
         logger.info(f"Creating dataloader for split '{split}' with {len(split_subjects)} subjects")
-    
-    # Create dataset - when using DistributedSampler, don't pass rank/world_size
-    # The sampler will handle data sharding, not the dataset
+
+    # Create dataset
+    # CRITICAL FIX: In distributed mode, MUST pass rank/world_size to dataset for file sharding
+    # The DistributedSampler only handles segment-level sharding, NOT file-level sharding
+    # Without this, each rank loads ALL files = massive memory duplication!
     dataset = EEGDataset(
         data_path=data_path,
         segment_length=segment_length,
         overlap=overlap,
         augment=augment,
-        rank=0 if distributed else rank,  # Always 0 for distributed (sampler handles sharding)
-        world_size=1 if distributed else world_size,  # Always 1 for distributed
+        rank=rank,  # FIXED: Pass actual rank for file-level sharding
+        world_size=world_size,  # FIXED: Pass actual world_size
         split_subjects=split_subjects,
         **dataset_kwargs
     )

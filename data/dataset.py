@@ -71,12 +71,16 @@ class EEGDataset(Dataset):
         self.split_subjects = split_subjects
 
         # Initialize loader and preprocessor
+        # Extract preload parameter from kwargs (default True if not specified)
+        preload = preprocessor_kwargs.pop('preload', True)
+
         self.loader = EEGLoader(
             channels=channels,
             sampling_rate=sampling_rate,
             channel_selection_strategy=channel_selection_strategy,
             target_channels=target_channels,
-            max_duration=max_duration
+            max_duration=max_duration,
+            preload=preload  # Pass preload to avoid OOM
         )
         
         self.preprocessor = EEGPreprocessor(
