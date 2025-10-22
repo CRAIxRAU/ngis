@@ -217,7 +217,8 @@ def main():
             world_size=args.world_size,
             channel_selection_strategy=config.data.channel_selection_strategy,
             target_channels=config.data.channels,
-            max_duration=max_duration
+            max_duration=max_duration,
+            shard_across_ranks=is_distributed
         )
 
         # For validation, use smaller subset (only first 10% of data for speed)
@@ -240,7 +241,8 @@ def main():
             world_size=args.world_size,
             channel_selection_strategy=config.data.channel_selection_strategy,
             target_channels=config.data.channels,
-            max_duration=val_max_duration
+            max_duration=val_max_duration,
+            shard_across_ranks=is_distributed
         )
 
         # Set dataloaders on trainer

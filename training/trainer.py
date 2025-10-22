@@ -7,6 +7,7 @@ for the graph-structured spiking neural network.
 
 import logging
 import time
+import os
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -74,6 +75,10 @@ class NGISTrainer:
         self.global_step = 0
         self.best_loss = float("inf")
         self.early_stopping_counter = 0
+
+        # Optional caps to limit batches during profiling
+        self.max_train_batches = int(os.getenv("NGIS_MAX_TRAIN_BATCHES", "0"))
+        self.max_val_batches = int(os.getenv("NGIS_MAX_VAL_BATCHES", "0"))
 
         logger.info(f"Initialized NGIS trainer on {self.device}")
 
@@ -177,8 +182,8 @@ class NGISTrainer:
             if self.rank == 0:  # Only save on main process
                 self._save_checkpoint(val_loss)
 
-            # Early stopping check
-            if self._should_stop_early(val_loss):
+            # Early stopping check (synchronized across ranks)
+            if self._sync_should_stop(val_loss):
                 logger.info("Early stopping triggered")
                 break
         range_pop()  # End of training loop
@@ -192,11 +197,25 @@ class NGISTrainer:
         total_loss = 0.0
         num_batches = 0
         range_push(f"Train Epoch {self.current_epoch} start")
+
+        if self.is_distributed and hasattr(self.train_dataloader, "sampler"):
+            sampler = getattr(self.train_dataloader, "sampler")
+            if hasattr(sampler, "set_epoch"):
+                sampler.set_epoch(self.current_epoch)
+
+        # Determine synchronized max batches to avoid DDP stalls
+        local_train_len = torch.tensor([len(self.train_dataloader)], device=self.device)
+        if self.is_distributed:
+            dist.all_reduce(local_train_len, op=dist.ReduceOp.MIN)
+        max_train_batches = int(local_train_len.item())
+        if self.max_train_batches > 0:
+            max_train_batches = min(max_train_batches, self.max_train_batches)
+
         # Create progress bar
         if self.rank == 0:
             pbar = tqdm(
                 desc=f"Epoch {self.current_epoch}",
-                total=len(self.train_dataloader),
+                total=max_train_batches,
                 leave=False,
             )
 
@@ -252,6 +271,9 @@ class NGISTrainer:
             # Log batch metrics
             if self.global_step % self.config.logging.log_frequency == 0:
                 self._log_batch_metrics(loss.item())
+            # Respect synchronized batch cap to avoid DDP stalls
+            if (batch_idx + 1) >= max_train_batches:
+                break
         if self.rank == 0:
             pbar.close()
 
@@ -264,11 +286,19 @@ class NGISTrainer:
         total_loss = 0.0
         num_batches = 0
 
+        # Determine synchronized max validation batches
+        local_val_len = torch.tensor([len(self.val_dataloader)], device=self.device)
+        if self.is_distributed:
+            dist.all_reduce(local_val_len, op=dist.ReduceOp.MIN)
+        max_val_batches = int(local_val_len.item())
+        if self.max_val_batches > 0:
+            max_val_batches = min(max_val_batches, self.max_val_batches)
+
         # Create progress bar for validation
         if self.rank == 0:
             pbar = tqdm(
                 desc=f"Validation {self.current_epoch}",
-                total=len(self.val_dataloader),
+                total=max_val_batches,
                 leave=False,
             )
 
@@ -302,6 +332,8 @@ class NGISTrainer:
                 if self.rank == 0:
                     pbar.update(1)
                     pbar.set_postfix({"val_loss": loss.item()})
+                if (batch_idx + 1) >= max_val_batches:
+                    break
         # Close progress bar
         if self.rank == 0:
             pbar.close()
@@ -398,6 +430,19 @@ class NGISTrainer:
             return self.early_stopping_counter >= patience
 
         return False
+
+    def _sync_should_stop(self, val_loss: float) -> bool:
+        """Synchronize early-stopping decision across all ranks."""
+        # Compute decision on rank 0 (others set 0)
+        local_flag = 1 if (self.rank == 0 and self._should_stop_early(val_loss)) else 0
+
+        if self.is_distributed:
+            tensor_flag = torch.tensor([local_flag], device=self.device)
+            # If any rank wants to stop, all will stop (MAX reduction)
+            dist.all_reduce(tensor_flag, op=dist.ReduceOp.MAX)
+            return bool(tensor_flag.item())
+        else:
+            return bool(local_flag)
 
     def set_dataloaders(
         self, train_dataloader: DataLoader, val_dataloader: DataLoader

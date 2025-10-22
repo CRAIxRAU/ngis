@@ -227,7 +227,8 @@ class EEGPreprocessor:
                 segment = data[:, start_idx:end_idx]
                 segments.append(segment)
         
-        return np.array(segments)
+        # Return compact float32 to reduce memory footprint
+        return np.array(segments, dtype=np.float32)
     
     def extract_features(
         self,

@@ -9,7 +9,9 @@ import logging
 from typing import Dict, List, Optional, Tuple, Union
 
 import torch
+import torch.distributed as dist
 from torch.utils.data import DataLoader, DistributedSampler
+from torch.utils.data import Sampler
 from torch.utils.data.dataloader import default_collate
 
 from .dataset import EEGDataset, EEGInferenceDataset, EEGPairedDataset
@@ -26,7 +28,9 @@ def create_dataloader(
     drop_last: bool = False,
     distributed: bool = False,
     rank: int = 0,
-    world_size: int = 1
+    world_size: int = 1,
+    use_distributed_sampler: bool = True,
+    sampler: Optional[Sampler] = None,
 ) -> DataLoader:
     """
     Create DataLoader for EEG dataset.
@@ -46,17 +50,20 @@ def create_dataloader(
         PyTorch DataLoader.
     """
     # Create sampler for distributed training
-    sampler = None
-    if distributed:
-        sampler = DistributedSampler(
+    sampler_to_use = sampler
+
+    if distributed and sampler_to_use is None and use_distributed_sampler:
+        sampler_to_use = DistributedSampler(
             dataset,
             num_replicas=world_size,
             rank=rank,
             shuffle=shuffle,
-            drop_last=True  # Ensure all ranks have exactly same number of samples
+            drop_last=drop_last,
         )
         shuffle = False  # Sampler handles shuffling
-    
+    elif sampler_to_use is not None:
+        shuffle = False  # External sampler defines ordering
+
     # Create DataLoader
     dataloader = DataLoader(
         dataset,
@@ -65,7 +72,7 @@ def create_dataloader(
         num_workers=num_workers,
         pin_memory=pin_memory,
         drop_last=drop_last,
-        sampler=sampler,
+        sampler=sampler_to_use,
         collate_fn=collate_eeg_batch
     )
     
@@ -138,6 +145,7 @@ def create_training_dataloader(
     distributed: bool = False,
     rank: int = 0,
     world_size: int = 1,
+    shard_across_ranks: bool = False,
     **dataset_kwargs
 ) -> DataLoader:
     """
@@ -153,33 +161,42 @@ def create_training_dataloader(
         distributed: Whether using distributed training.
         rank: Rank of current process.
         world_size: Total number of processes.
+        shard_across_ranks: If True, shard files inside EEGDataset using
+            rank/world_size. Leave False when using DistributedSampler.
         **dataset_kwargs: Additional arguments for EEGDataset.
         
     Returns:
         DataLoader for training.
     """
-    # Create dataset - when using DistributedSampler, don't pass rank/world_size
-    # The sampler will handle data sharding, not the dataset
+    # Create dataset; by default every rank loads the full corpus and the
+    # DistributedSampler handles sharding.
+    dataset_rank = rank if shard_across_ranks else 0
+    dataset_world_size = world_size if shard_across_ranks else 1
+
     dataset = EEGDataset(
         data_path=data_path,
         segment_length=segment_length,
         overlap=overlap,
         augment=augment,
-        rank=0 if distributed else rank,  # Always 0 for distributed (sampler handles sharding)
-        world_size=1 if distributed else world_size,  # Always 1 for distributed
+        rank=dataset_rank,
+        world_size=dataset_world_size,
         **dataset_kwargs
     )
     
+    # Determine whether to use DistributedSampler
+    use_ddp_sampler = distributed and not shard_across_ranks
+
     # Create DataLoader
     return create_dataloader(
         dataset=dataset,
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
-        distributed=distributed,
+        distributed=use_ddp_sampler,
         rank=rank,
         world_size=world_size,
-        drop_last=distributed  # Drop last batch in distributed mode to avoid NCCL timeout
+        drop_last=use_ddp_sampler,  # Keep ranks in sync only when using sampler
+        use_distributed_sampler=use_ddp_sampler,
     )
 
 
@@ -317,4 +334,4 @@ def get_dataloader_stats(dataloader: DataLoader) -> Dict:
         'dataset_stats': dataset_stats
     }
     
-    return stats 
+    return stats
