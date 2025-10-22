@@ -69,6 +69,7 @@ class EEGDataset(Dataset):
         self.rank = rank
         self.world_size = world_size
         self.split_subjects = split_subjects
+        self.training = True  # Default to training mode
 
         # Initialize loader and preprocessor
         # Extract preload parameter from kwargs (default True if not specified)
@@ -202,7 +203,15 @@ class EEGDataset(Dataset):
             segment = segment * scale
         
         return segment
-    
+
+    def train(self):
+        """Set dataset to training mode (enables augmentation)."""
+        self.training = True
+
+    def eval(self):
+        """Set dataset to evaluation mode (disables augmentation)."""
+        self.training = False
+
     def get_statistics(self) -> Dict:
         """Get dataset statistics."""
         if not self.segments:

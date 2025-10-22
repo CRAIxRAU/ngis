@@ -289,6 +289,9 @@ def main():
 
     console.print(f"[green]✓[/green] Test set: {len(test_dataloader)} batches")
 
+    # Set dataset to eval mode (disable augmentation)
+    test_dataloader.dataset.eval()
+
     # Run evaluation
     results = evaluate_model(
         model=model,
