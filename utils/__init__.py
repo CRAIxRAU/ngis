@@ -11,7 +11,7 @@ from .checkpointing import CheckpointManager
 from .visualization import EEGVisualizer, NetworkVisualizer
 from .metrics import (
     compute_eeg_metrics,
-    compute_frequency_metrics,
+    compute_band_power_metrics,
     compute_spike_metrics,
     compute_graph_metrics,
     compute_all_metrics,
@@ -27,7 +27,7 @@ __all__ = [
     "EEGVisualizer",
     "NetworkVisualizer",
     "compute_eeg_metrics",
-    "compute_frequency_metrics",
+    "compute_band_power_metrics",
     "compute_spike_metrics",
     "compute_graph_metrics",
     "compute_all_metrics",
