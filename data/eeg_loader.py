@@ -219,10 +219,11 @@ class EEGLoader:
             logger.warning(f"No files found after split filtering")
             return {}
 
-        # Shard files across ranks
-        files_for_rank = [f for idx, f in enumerate(files) if idx % world_size == rank]
+        # FIXED: Load ALL files on all ranks - DistributedSampler handles segment-level sharding
+        # File-level sharding causes imbalanced batch counts → NCCL deadlocks
+        files_for_rank = files  # All ranks load all files
 
-        logger.info(f"Rank {rank}/{world_size}: Found {len(files)} total files, loading {len(files_for_rank)} files")
+        logger.info(f"Rank {rank}/{world_size}: Found {len(files)} total files, loading ALL files (DistributedSampler handles sharding)")
 
         raw_data = {}
         for file_path in files_for_rank:

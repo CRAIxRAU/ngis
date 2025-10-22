@@ -95,41 +95,35 @@ class EEGDataset(Dataset):
         logger.info(f"Created EEG dataset with {len(self.segments)} segments")
     
     def _load_data(self, data_path: Union[str, List[str]]):
-        """Load EEG data from file(s), sharded by rank for distributed training."""
+        """Load EEG data from file(s). All ranks load all files - DistributedSampler handles segment sharding."""
         if isinstance(data_path, str):
             # Single file or directory
             path = data_path
             if path.endswith(('.edf', '.bdf', '.fif', '.set', '.cnt')):
-                # Single file - only rank 0 loads it
-                if self.rank == 0:
-                    raw = self.loader.load_file(path)
-                    self.raw_data = {'single_file': raw}
-                else:
-                    self.raw_data = {}
+                # Single file - all ranks load it
+                raw = self.loader.load_file(path)
+                self.raw_data = {'single_file': raw}
             else:
-                # Directory - shard files across ranks
+                # Directory - ALL ranks load ALL files (no file-level sharding)
+                # DistributedSampler handles segment-level sharding for balanced batches
                 self.raw_data = self.loader.load_directory(
-                    path, 
-                    rank=self.rank, 
-                    world_size=self.world_size,
+                    path,
+                    rank=0,  # Dummy value - all ranks load all files
+                    world_size=1,  # Dummy value - no file sharding
                     split_subjects=self.split_subjects
                 )
         else:
-            # List of files - shard across ranks
+            # List of files - ALL ranks load ALL files (no file-level sharding)
             self.raw_data = {}
-            for idx, file_path in enumerate(data_path):
-                # Only load files assigned to this rank
-                if idx % self.world_size == self.rank:
-                    try:
-                        raw = self.loader.load_file(file_path)
-                        self.raw_data[Path(file_path).stem] = raw
-                    except Exception as e:
-                        logger.warning(f"Failed to load {file_path}: {e}")
+            for file_path in data_path:
+                try:
+                    raw = self.loader.load_file(file_path)
+                    self.raw_data[Path(file_path).stem] = raw
+                except Exception as e:
+                    logger.warning(f"Failed to load {file_path}: {e}")
 
         if not self.raw_data:
-            logger.warning(f"Rank {self.rank}: No valid EEG data found (this may be normal for some ranks)")
-            # Create empty raw_data dict to avoid errors
-            self.raw_data = {}
+            raise ValueError(f"No valid EEG data found in {data_path}")
     
     def _segment_data(self):
         """Segment EEG data into training segments."""
