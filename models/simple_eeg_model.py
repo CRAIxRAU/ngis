@@ -54,8 +54,12 @@ class SimpleEEGModel(nn.Module):
             nn.Conv1d(hidden_dim * 2, hidden_dim, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Conv1d(hidden_dim, n_channels, kernel_size=3, padding=1)
+            nn.Conv1d(hidden_dim, n_channels, kernel_size=3, padding=1),
+            nn.Tanh()  # Bound outputs to [-1, 1] to prevent extreme values
         )
+
+        # Scale factor to match normalized EEG data range (~[-5, 5])
+        self.output_scale = 5.0
 
     def forward(
         self,
@@ -77,8 +81,8 @@ class SimpleEEGModel(nn.Module):
         # Encode
         latent = self.encoder(eeg_input)
 
-        # Decode
-        eeg_output = self.decoder(latent)
+        # Decode and scale output to match data range
+        eeg_output = self.decoder(latent) * self.output_scale
 
         # Create dummy outputs for compatibility with loss function
         batch_size, n_channels, seq_len = eeg_input.shape

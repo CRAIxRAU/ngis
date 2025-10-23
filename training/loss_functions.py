@@ -15,11 +15,11 @@ logger = logging.getLogger(__name__)
 
 class EEGLoss(nn.Module):
     """Loss function for EEG reconstruction."""
-    
+
     def __init__(self, loss_type: str = "mse"):
         super().__init__()
         self.loss_type = loss_type
-    
+
     def forward(self, real_eeg: torch.Tensor, simulated_eeg: torch.Tensor) -> torch.Tensor:
         """Calculate EEG reconstruction loss."""
         if self.loss_type == "mse":
