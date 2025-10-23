@@ -54,12 +54,12 @@ class SimpleEEGModel(nn.Module):
             nn.Conv1d(hidden_dim * 2, hidden_dim, kernel_size=3, padding=1),
             nn.ReLU(),
             nn.Dropout(dropout),
-            nn.Conv1d(hidden_dim, n_channels, kernel_size=3, padding=1),
-            nn.Tanh()  # Bound outputs to [-1, 1] to prevent extreme values
+            nn.Conv1d(hidden_dim, n_channels, kernel_size=3, padding=1)
         )
 
-        # Scale factor to match normalized EEG data range (~[-5, 5])
-        self.output_scale = 5.0
+        # Initialize final layer with small weights to prevent initial explosion
+        nn.init.xavier_normal_(self.decoder[-1].weight, gain=0.01)
+        nn.init.zeros_(self.decoder[-1].bias)
 
     def forward(
         self,
@@ -81,8 +81,8 @@ class SimpleEEGModel(nn.Module):
         # Encode
         latent = self.encoder(eeg_input)
 
-        # Decode and scale output to match data range
-        eeg_output = self.decoder(latent) * self.output_scale
+        # Decode (final layer learns appropriate scaling)
+        eeg_output = self.decoder(latent)
 
         # Create dummy outputs for compatibility with loss function
         batch_size, n_channels, seq_len = eeg_input.shape
