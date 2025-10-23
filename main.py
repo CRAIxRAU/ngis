@@ -221,6 +221,7 @@ def main():
             world_size=args.world_size,
             channel_selection_strategy=config.data.channel_selection_strategy,
             target_channels=config.data.channels,
+            channels=(config.data.channels if isinstance(config.data.channels, list) else None),
             max_duration=max_duration,
             split='train',  # FIXED: Use 'train' split
             splits_config_path=splits_config
@@ -240,6 +241,7 @@ def main():
             world_size=args.world_size,
             channel_selection_strategy=config.data.channel_selection_strategy,
             target_channels=config.data.channels,
+            channels=(config.data.channels if isinstance(config.data.channels, list) else None),
             max_duration=max_duration,
             split='validation',  # FIXED: Use 'validation' split
             splits_config_path=splits_config

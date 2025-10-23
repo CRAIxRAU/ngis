@@ -20,7 +20,7 @@ data:
   sampling_rate: 1000.0  # Dataset sampling rate
   channels: 128  # Target channel count (ds003766 has 129, selection drops control)
   original_channels: 129  # Actual channels in dataset
-  channel_selection_strategy: "uniform_spatial"  # Use uniform spatial selection
+  channel_selection_strategy: "uniform_spatial"  # Canonicalized in code for consistency
 
   # Memory optimization - disable preloading to avoid OOM
   preload: false  # DO NOT preload data into memory

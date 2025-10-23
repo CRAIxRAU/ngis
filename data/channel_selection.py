@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
 import numpy as np
+import re
 import pandas as pd
 
 logger = logging.getLogger(__name__)
@@ -88,19 +89,39 @@ class ChannelSelector:
             return self._custom_selection(all_channels, custom_channels)
         
     def _uniform_spatial_selection(self, all_channels: List[str]) -> List[str]:
-        """Select every 2nd electrode for uniform spatial coverage."""
-        # Simple stride-based selection
+        """Select channels with deterministic ordering.
+
+        - For BioSemi-style datasets (E1..E129), enforce canonical ordering
+          and drop E129 to standardize to 128 channels across subjects.
+        - Otherwise, fall back to stride-based selection with deterministic
+          fill to exactly 128 channels.
+        """
+
+        def _e_num(name: str) -> int:
+            m = re.fullmatch(r"E(\d+)", name)
+            return int(m.group(1)) if m else 10**9  # non-E names sort last
+
+        is_biosemi = sum(1 for ch in all_channels if re.fullmatch(r"E\d+", ch)) >= int(0.8 * len(all_channels))
+
+        if is_biosemi and len(all_channels) in (128, 129):
+            # Canonicalize ordering and ensure consistent 128-channel set
+            ordered = sorted(all_channels, key=_e_num)
+            if 'E129' in ordered:
+                ordered.remove('E129')  # drop control/extra channel
+            if len(ordered) < 128:
+                raise ValueError(f"Not enough channels after canonicalization: {len(ordered)} < 128")
+            selected = ordered[:128]
+            logger.info("Using canonical BioSemi E1..E128 ordering (dropping E129 if present)")
+            return selected
+
+        # Fallback: stride-based selection, then deterministic fill
         selected = all_channels[::2]  # Every 2nd channel
-        
-        if len(selected) != 128:
-            # Adjust if needed (should be exactly 128 from 256)
-            if len(selected) > 128:
-                selected = selected[:128]
-            else:
-                # Add remaining channels if somehow we have fewer
-                remaining = [ch for ch in all_channels if ch not in selected]
-                selected.extend(remaining[:128 - len(selected)])
-        
+        if len(selected) > 128:
+            selected = selected[:128]
+        elif len(selected) < 128:
+            remaining = [ch for ch in all_channels if ch not in selected]
+            selected.extend(remaining[: max(0, 128 - len(selected))])
+
         logger.info(f"Selected {len(selected)} channels using uniform spatial strategy")
         return selected
     
