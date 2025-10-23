@@ -99,7 +99,7 @@ torchrun \
     --nproc_per_node=4 \
     main.py \
     --config configs/cluster_full.yaml \
-    --epochs 5 \
+    --epochs 25 \
     --world_size 4
 
 echo "=========================================="
