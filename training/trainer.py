@@ -242,7 +242,7 @@ class NGISTrainer:
             spike_trains = outputs["spike_trains"]
 
             # Log data range on first batch to verify normalization
-            if batch_idx == 0 and epoch == 0:
+            if batch_idx == 0 and self.current_epoch == 0:
                 real_eeg = batch["eeg"]
                 logger.info(f"📊 Input EEG range: [{real_eeg.min():.4f}, {real_eeg.max():.4f}], mean={real_eeg.mean():.4f}, std={real_eeg.std():.4f}")
                 logger.info(f"📊 Output EEG range: [{simulated_eeg.min():.4f}, {simulated_eeg.max():.4f}], mean={simulated_eeg.mean():.4f}, std={simulated_eeg.std():.4f}")
