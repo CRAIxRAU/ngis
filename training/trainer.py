@@ -320,6 +320,12 @@ class NGISTrainer:
         if self.rank == 0:
             pbar.close()
 
+        # Safety guard: handle case where all batches were skipped
+        if num_batches == 0:
+            logger.error("All training batches were skipped! This indicates a critical issue.")
+            logger.error("Possible causes: NaN gradients in all batches, data loading failure, etc.")
+            raise RuntimeError("Training epoch failed: all batches were skipped (num_batches=0)")
+
         return float(total_loss / num_batches)
 
     def _validate_epoch(self) -> Tuple[float, Dict[str, float]]:
@@ -346,6 +352,8 @@ class NGISTrainer:
                 range_push(f"Val Batch {batch_idx} processing")
                 batch = self._move_batch_to_device(batch)
                 range_pop()  # End of batch processing
+
+                
                 
                 # Forward pass
                 range_push(f"Val Batch {batch_idx} forward pass")
@@ -397,9 +405,15 @@ class NGISTrainer:
         if self.rank == 0:
             pbar.close()
 
+        # Safety guard: handle case where all batches were skipped
+        if num_batches == 0:
+            logger.error("All validation batches were skipped! This indicates a critical issue.")
+            logger.error("Possible causes: NaN gradients in all batches, data loading failure, etc.")
+            raise RuntimeError("Validation epoch failed: all batches were skipped (num_batches=0)")
+
         # Average accumulated metrics
         avg_metrics = {k: float(np.mean(v)) for k, v in accumulated_metrics.items()}
-        
+
         return float(total_loss / num_batches), avg_metrics
 
     def _move_batch_to_device(self, batch: Dict) -> Dict:

@@ -179,18 +179,40 @@ class EEGPreprocessor:
         return raw
     
     def _normalize_data(self, raw: mne.io.Raw) -> mne.io.Raw:
-        """Normalize EEG data."""
+        """Normalize EEG data with robust handling of constant channels."""
         logger.info("Normalizing EEG data...")
 
         data = raw.get_data()
+        n_channels, n_samples = data.shape
+        normalized = np.zeros_like(data)
 
-        # Z-score normalization per channel (handle constant channels)
-        data_normalized = zscore(data, axis=1, nan_policy='propagate')
-        data_normalized = np.nan_to_num(data_normalized, nan=0.0, posinf=0.0, neginf=0.0)
+        for ch_idx in range(n_channels):
+            ch_data = data[ch_idx, :]
+            ch_mean = np.mean(ch_data)
+            ch_std = np.std(ch_data)
 
-        # Update the raw object
-        raw._data = data_normalized
+            if ch_std < 1e-8:
+                # Constant channel - interpolate from neighbors
+                logger.warning(f"Channel {ch_idx} is constant (std={ch_std:.2e}), interpolating from neighbors")
+                if 0 < ch_idx < n_channels - 1:
+                    # Average of neighbors
+                    prev_data = normalized[ch_idx-1, :] if ch_idx > 0 else ch_data - ch_mean
+                    next_idx = ch_idx + 1
+                    while next_idx < n_channels and np.std(data[next_idx, :]) < 1e-8:
+                        next_idx += 1
+                    if next_idx < n_channels:
+                        next_data = (data[next_idx, :] - np.mean(data[next_idx, :])) / (np.std(data[next_idx, :]) + 1e-8)
+                        normalized[ch_idx, :] = (prev_data + next_data) / 2
+                    else:
+                        normalized[ch_idx, :] = ch_data - ch_mean
+                else:
+                    # Edge channel - just center it
+                    normalized[ch_idx, :] = ch_data - ch_mean
+            else:
+                # Normal normalization
+                normalized[ch_idx, :] = (ch_data - ch_mean) / ch_std
 
+        raw._data = normalized
         return raw
     
     def segment_data(
