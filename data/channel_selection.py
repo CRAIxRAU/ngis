@@ -97,21 +97,41 @@ class ChannelSelector:
           fill to exactly 128 channels.
         """
 
-        def _e_num(name: str) -> int:
-            m = re.fullmatch(r"E(\d+)", name)
-            return int(m.group(1)) if m else 10**9  # non-E names sort last
+        def _extract_channel_number(name: str) -> Optional[int]:
+            """Return trailing numeric index if the name looks like EEG/E##."""
+            stripped = name.strip()
+            m = re.match(r"^(?:EEG|E)?\s*-?\s*0*(\d+)$", stripped, re.IGNORECASE)
+            if m:
+                return int(m.group(1))
+            m = re.search(r"(\d+)$", stripped)
+            return int(m.group(1)) if m else None
 
-        is_biosemi = sum(1 for ch in all_channels if re.fullmatch(r"E\d+", ch)) >= int(0.8 * len(all_channels))
+        numeric_channels = [ch for ch in all_channels if _extract_channel_number(ch) is not None]
+        is_biosemi = len(numeric_channels) >= int(0.8 * len(all_channels))
 
-        if is_biosemi and len(all_channels) in (128, 129):
+        if is_biosemi and 120 <= len(numeric_channels) <= 129:
             # Canonicalize ordering and ensure consistent 128-channel set
-            ordered = sorted(all_channels, key=_e_num)
-            if 'E129' in ordered:
-                ordered.remove('E129')  # drop control/extra channel
+            ordered_numeric = sorted(
+                numeric_channels,
+                key=lambda ch: _extract_channel_number(ch)
+            )
+            drop_numbers = {129}
+            ordered_numeric = [
+                ch for ch in ordered_numeric
+                if _extract_channel_number(ch) not in drop_numbers
+            ]
+            all_filtered = [
+                ch for ch in all_channels
+                if _extract_channel_number(ch) not in drop_numbers
+            ]
+            others = [ch for ch in all_filtered if ch not in ordered_numeric]
+            ordered = ordered_numeric + others
             if len(ordered) < 128:
                 raise ValueError(f"Not enough channels after canonicalization: {len(ordered)} < 128")
             selected = ordered[:128]
-            logger.info("Using canonical BioSemi E1..E128 ordering (dropping E129 if present)")
+            logger.info(
+                "Using canonical numeric channel ordering (dropping channel 129 if present)"
+            )
             return selected
 
         # Fallback: stride-based selection, then deterministic fill
