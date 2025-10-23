@@ -109,6 +109,13 @@ class ChannelSelector:
         numeric_channels = [ch for ch in all_channels if _extract_channel_number(ch) is not None]
         is_biosemi = len(numeric_channels) >= int(0.8 * len(all_channels))
 
+        logger.info(
+            "Channel selection input: total=%d, numeric=%d, sample=%s",
+            len(all_channels),
+            len(numeric_channels),
+            numeric_channels[:5]
+        )
+
         if is_biosemi and 120 <= len(numeric_channels) <= 129:
             # Canonicalize ordering and ensure consistent 128-channel set
             ordered_numeric = sorted(
