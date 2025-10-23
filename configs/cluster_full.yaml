@@ -9,7 +9,7 @@ data:
   raw_data_path: "/net/storage/pr3/plgrid/plgghack2025bioart/data/raw"
 
   # Memory-efficient batch settings
-  batch_size: 2  # Very small batch to avoid OOM (2 per GPU = 8 total with 4 GPUs)
+  batch_size: 8  # Increased from 2 to smooth variance across subjects (8 per GPU = 32 total with 4 GPUs)
   num_workers: 1  # Single worker per GPU to minimize memory overhead
 
   # Segmentation settings
@@ -63,7 +63,7 @@ model:
 training:
   epochs: 50  # Full training
   learning_rate: 0.001
-  batch_size: 2  # Match data batch_size
+  batch_size: 8  # Match data batch_size
   output_dir: "outputs/"
   save_frequency: 5  # Save every 5 epochs
   log_frequency: 50  # Log less frequently to reduce I/O
