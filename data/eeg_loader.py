@@ -107,18 +107,24 @@ class EEGLoader:
             logger.error(f"Failed to load EEG file {file_path}: {e}")
             raise
 
-        # CRITICAL FIX: Exclude Channel 64 (dead/constant in multiple subjects)
-        # Channel 64 consistently has std=0 and causes validation loss spikes to 95+
-        # Interpolation doesn't help - better to exclude entirely
-        if 'EEG 064' in raw.ch_names:
-            logger.info("Excluding Channel 64 (known problematic electrode)")
-            raw.drop_channels(['EEG 064'])
-        elif '064' in raw.ch_names:
-            logger.info("Excluding Channel 64 (known problematic electrode)")
-            raw.drop_channels(['064'])
-        elif 'Ch64' in raw.ch_names:
-            logger.info("Excluding Channel 64 (known problematic electrode)")
-            raw.drop_channels(['Ch64'])
+        # CRITICAL FIX: Drop channels that are effectively constant
+        # This robustly catches the problematic electrode (e.g., Channel 64),
+        # regardless of naming convention (E64, EEG 064, etc.).
+        try:
+            # Use a short initial window to avoid loading full recordings
+            sfreq = float(raw.info.get('sfreq', 1000.0))
+            window = int(min(raw.n_times, max(int(sfreq * 10), 1)))  # up to first 10s
+            data_chunk = raw.get_data(start=0, stop=window)
+            ch_stds = np.std(data_chunk, axis=1)
+            constant_idx = np.where(ch_stds < 1e-8)[0].tolist()
+            if constant_idx:
+                constant_names = [raw.ch_names[i] for i in constant_idx]
+                logger.warning(
+                    f"Dropping {len(constant_names)} constant channel(s): {constant_names}"
+                )
+                raw.drop_channels(constant_names)
+        except Exception as e:
+            logger.warning(f"Failed constant-channel check; proceeding without drop. Error: {e}")
 
         # Apply channel selection strategy or explicit channels
         if self.channel_selector is not None:
