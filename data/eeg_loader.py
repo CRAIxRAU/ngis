@@ -106,7 +106,20 @@ class EEGLoader:
         except Exception as e:
             logger.error(f"Failed to load EEG file {file_path}: {e}")
             raise
-        
+
+        # CRITICAL FIX: Exclude Channel 64 (dead/constant in multiple subjects)
+        # Channel 64 consistently has std=0 and causes validation loss spikes to 95+
+        # Interpolation doesn't help - better to exclude entirely
+        if 'EEG 064' in raw.ch_names:
+            logger.info("Excluding Channel 64 (known problematic electrode)")
+            raw.drop_channels(['EEG 064'])
+        elif '064' in raw.ch_names:
+            logger.info("Excluding Channel 64 (known problematic electrode)")
+            raw.drop_channels(['064'])
+        elif 'Ch64' in raw.ch_names:
+            logger.info("Excluding Channel 64 (known problematic electrode)")
+            raw.drop_channels(['Ch64'])
+
         # Apply channel selection strategy or explicit channels
         if self.channel_selector is not None:
             # Use channel selection strategy (e.g., 256→128 reduction)
