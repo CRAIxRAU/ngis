@@ -54,6 +54,7 @@ class TrainingConfig:
     output_dir: str = "outputs/"
     save_frequency: int = 10
     log_frequency: int = 100
+    validation_frequency: int = 1
     early_stopping_patience: int = 10
     gradient_clip: float = 1.0
 

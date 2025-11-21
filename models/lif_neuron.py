@@ -74,16 +74,27 @@ class LIFNeuron(nn.Module):
         
         logger.info(f"Initialized LIF neurons: {n_neurons} neurons")
     
-    def reset_state(self):
+    def reset_state(
+        self,
+        batch_size: int = 1,
+        device: Optional[torch.device] = None,
+    ):
         """Reset neuron state variables."""
-        # Membrane potential
-        self.v = self.v_rest.clone().expand(self.n_neurons)
-        
-        # Refractory counter
-        self.refractory_counter = torch.zeros(self.n_neurons)
-        
-        # Spike history
-        self.last_spike_time = torch.full((self.n_neurons,), -float('inf'))
+        target_device = device or self.v_rest.device
+
+        # Expand scalar buffers to match the working batch
+        v_rest = self.v_rest.detach().clone().to(target_device)
+        self.v = v_rest.expand(batch_size, self.n_neurons).clone()
+
+        self.refractory_counter = torch.zeros(
+            batch_size, self.n_neurons, device=target_device
+        )
+
+        self.last_spike_time = torch.full(
+            (batch_size, self.n_neurons),
+            -float("inf"),
+            device=target_device,
+        )
     
     def forward(
         self,
@@ -100,20 +111,19 @@ class LIFNeuron(nn.Module):
         Returns:
             Tuple of (spikes, membrane_potentials).
         """
+        if input_current.dim() != 2 or input_current.size(1) != self.n_neurons:
+            raise ValueError(
+                "Expected input_current with shape (batch_size, n_neurons)"
+            )
+
         batch_size = input_current.shape[0]
-        
-        # Initialize output tensors
-        spikes = torch.zeros(batch_size, self.n_neurons, device=input_current.device)
-        membrane_potentials = torch.zeros(batch_size, self.n_neurons, device=input_current.device)
-        
-        # Process each batch element
-        for b in range(batch_size):
-            # Update neuron states
-            batch_spikes, batch_membrane = self._update_neurons(input_current[b])
-            
-            spikes[b] = batch_spikes
-            membrane_potentials[b] = batch_membrane
-        
+
+        # Lazily resize the internal state if the batch changes
+        if not hasattr(self, "v") or self.v.size(0) != batch_size:
+            self.reset_state(batch_size=batch_size, device=input_current.device)
+
+        spikes, membrane_potentials = self._update_neurons(input_current)
+
         if return_membrane:
             return spikes, membrane_potentials
         else:
@@ -125,63 +135,138 @@ class LIFNeuron(nn.Module):
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         """
         Update neuron states for a single time step.
-        
+
         Args:
-            input_current: Input current to neurons (n_neurons).
-            
+            input_current: Input current to neurons (batch_size, n_neurons).
+
         Returns:
             Tuple of (spikes, membrane_potential).
         """
+        if input_current.dim() != 2:
+            raise ValueError("Expected batched input_current")
+
         # Add noise if specified
         if self.noise_std > 0:
             noise = torch.randn_like(input_current) * self.noise_std
             input_current = input_current + noise
-        
-        # Update refractory counter
-        self.refractory_counter = torch.clamp(self.refractory_counter - self.dt, min=0)
-        
-        # Check if neurons are in refractory period
+
+        # Update refractory counter for all neurons in parallel
+        self.refractory_counter = torch.clamp(
+            self.refractory_counter - self.dt, min=0
+        )
+
         refractory_mask = self.refractory_counter > 0
-        
-        # Update membrane potential
-        # LIF equation: dv/dt = (v_rest - v) / tau_m + I / C
-        # Discretized: v(t+1) = v(t) + dt * ((v_rest - v(t)) / tau_m + I / C)
-        
-        # Calculate membrane potential update
+
+        # Discretized LIF update
         membrane_update = self.dt * (
             (self.v_rest - self.v) / self.tau_m + input_current
         )
-        
-        # Apply update only to non-refractory neurons
+
         self.v = torch.where(
             refractory_mask,
-            self.v,  # Keep current potential during refractory period
-            self.v + membrane_update
+            self.v,
+            self.v + membrane_update,
         )
-        
-        # Generate spikes
+
+        # Spike generation and reset
         spike_mask = (self.v >= self.v_threshold) & ~refractory_mask
         spikes = spike_mask.float()
-        
-        # Reset membrane potential for neurons that spiked
+
         self.v = torch.where(spike_mask, self.v_reset, self.v)
-        
-        # Update refractory counter for neurons that spiked
+
         self.refractory_counter = torch.where(
             spike_mask,
             self.refractory_period,
-            self.refractory_counter
+            self.refractory_counter,
         )
-        
-        # Update last spike time
+
         self.last_spike_time = torch.where(
             spike_mask,
-            torch.tensor(0.0),  # Current time
-            self.last_spike_time
+            torch.zeros_like(self.last_spike_time),
+            self.last_spike_time,
         )
-        
+
         return spikes, self.v.clone()
-    
+
+    def forward_vectorized(
+        self,
+        input_currents: torch.Tensor,
+        return_membrane: bool = True
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor]]:
+        """
+        Vectorized forward pass for entire sequence (all timesteps at once).
+        Uses exponential Euler integration for better stability.
+
+        Args:
+            input_currents: Input currents (batch_size, n_neurons, seq_len).
+            return_membrane: Whether to return membrane potentials.
+
+        Returns:
+            Tuple of (spike_trains, membrane_potentials).
+            - spike_trains: (batch_size, n_neurons, seq_len)
+            - membrane_potentials: (batch_size, n_neurons, seq_len) or None
+        """
+        if input_currents.dim() != 3 or input_currents.size(1) != self.n_neurons:
+            raise ValueError(
+                "Expected input_currents with shape (batch_size, n_neurons, seq_len)"
+            )
+
+        batch_size, n_neurons, seq_len = input_currents.shape
+        device = input_currents.device
+
+        # Exponential Euler coefficients (more accurate than forward Euler)
+        alpha = torch.exp(-self.dt / self.tau_m)  # e^(-dt/tau_m)
+        beta = self.tau_m * (1 - alpha)  # tau_m * (1 - e^(-dt/tau_m))
+        gamma = (1 - alpha) * self.v_rest  # (1 - alpha) * v_rest
+
+        # Initialize state
+        v = torch.full((batch_size, n_neurons), self.v_rest.item(), device=device, dtype=input_currents.dtype)
+        refractory_counter = torch.zeros(batch_size, n_neurons, device=device, dtype=input_currents.dtype)
+
+        # Output tensors
+        spike_trains = torch.zeros_like(input_currents)
+        membrane_potentials = torch.zeros_like(input_currents) if return_membrane else None
+
+        # Vectorized time loop (still sequential but can be optimized by compiler)
+        for t in range(seq_len):
+            # Current input at time t
+            I_t = input_currents[:, :, t]
+
+            # Add noise if specified
+            if self.noise_std > 0:
+                I_t = I_t + torch.randn_like(I_t) * self.noise_std
+
+            # Update refractory counter
+            refractory_counter = torch.clamp(refractory_counter - self.dt, min=0.0)
+            refractory_mask = refractory_counter > 0
+
+            # Exponential Euler update for membrane potential
+            v_next = alpha * v + beta * I_t + gamma
+
+            # Apply refractory mask (keep v unchanged if in refractory period)
+            v = torch.where(refractory_mask, v, v_next)
+
+            # Spike detection
+            spike_mask = (v >= self.v_threshold) & ~refractory_mask
+            spikes = spike_mask.float()
+
+            # Reset membrane potential for spiking neurons
+            v = torch.where(spike_mask, self.v_reset, v)
+
+            # Set refractory counter for spiking neurons
+            refractory_counter = torch.where(
+                spike_mask,
+                self.refractory_period,
+                refractory_counter
+            )
+
+            # Store outputs
+            spike_trains[:, :, t] = spikes
+            if return_membrane:
+                membrane_potentials[:, :, t] = v
+
+        return spike_trains, membrane_potentials
+
     def get_parameters(self) -> Dict[str, torch.Tensor]:
         """Get current neuron parameters."""
         return {

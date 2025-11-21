@@ -52,18 +52,21 @@ def create_dataloader(
             dataset,
             num_replicas=world_size,
             rank=rank,
-            shuffle=shuffle
+            shuffle=shuffle,
+            drop_last=True  # Ensure all ranks have exactly same number of samples
         )
         shuffle = False  # Sampler handles shuffling
     
     # Create DataLoader
+    # CRITICAL: In distributed mode, MUST drop last batch to ensure all ranks have same number of batches
+    # This prevents NCCL hangs when ranks process different number of batches
     dataloader = DataLoader(
         dataset,
         batch_size=batch_size,
         shuffle=shuffle,
         num_workers=num_workers,
         pin_memory=pin_memory,
-        drop_last=drop_last,
+        drop_last=drop_last if not distributed else True,  # Force drop_last=True for distributed
         sampler=sampler,
         collate_fn=collate_eeg_batch
     )
@@ -137,10 +140,12 @@ def create_training_dataloader(
     distributed: bool = False,
     rank: int = 0,
     world_size: int = 1,
+    split: Optional[str] = None,
+    splits_config_path: str = "configs/splits.yaml",
     **dataset_kwargs
 ) -> DataLoader:
     """
-    Create DataLoader for training.
+    Create DataLoader for training with proper train/val/test splits.
     
     Args:
         data_path: Path to EEG data.
@@ -152,17 +157,33 @@ def create_training_dataloader(
         distributed: Whether using distributed training.
         rank: Rank of current process.
         world_size: Total number of processes.
+        split: 'train', 'validation', or 'test'. If None, uses all data.
+        splits_config_path: Path to splits configuration file.
         **dataset_kwargs: Additional arguments for EEGDataset.
         
     Returns:
         DataLoader for training.
     """
+    # Load splits if specified
+    split_subjects = None
+    if split is not None:
+        from utils.splits import load_splits
+        splits = load_splits(splits_config_path)
+        split_subjects = set(splits.get(split, []))
+        logger.info(f"Creating dataloader for split '{split}' with {len(split_subjects)} subjects")
+
     # Create dataset
+    # NOTE: rank/world_size passed to Dataset but ignored for file loading
+    # All ranks load ALL files - DistributedSampler handles segment-level sharding
+    # This ensures balanced batch counts across ranks (prevents NCCL hangs)
     dataset = EEGDataset(
         data_path=data_path,
         segment_length=segment_length,
         overlap=overlap,
         augment=augment,
+        rank=rank,  # Ignored by dataset (all ranks load all files)
+        world_size=world_size,  # Ignored by dataset
+        split_subjects=split_subjects,
         **dataset_kwargs
     )
     
@@ -174,7 +195,8 @@ def create_training_dataloader(
         num_workers=num_workers,
         distributed=distributed,
         rank=rank,
-        world_size=world_size
+        world_size=world_size,
+        drop_last=distributed  # Drop last batch in distributed mode to avoid NCCL timeout
     )
 
 

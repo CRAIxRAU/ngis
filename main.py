@@ -15,6 +15,7 @@ import yaml
 from rich.console import Console
 from rich.logging import RichHandler
 
+from data.dataloader import create_training_dataloader
 from training.trainer import NGISTrainer
 from utils.config import Config
 from utils.logging import setup_logging
@@ -111,20 +112,25 @@ def parse_args():
 
 def load_config(config_path: str) -> Config:
     """Load configuration from YAML file."""
-    with open(config_path, 'r') as f:
-        config_dict = yaml.safe_load(f)
-    return Config(config_dict)
+    return Config.from_yaml(config_path)
 
 
 def setup_distributed(args):
     """Setup distributed training if world_size > 1."""
+    # When using torchrun, get rank from environment variable
+    if 'RANK' in os.environ:
+        args.rank = int(os.environ['RANK'])
+    if 'LOCAL_RANK' in os.environ:
+        args.local_rank = int(os.environ['LOCAL_RANK'])
+    else:
+        args.local_rank = args.rank
+
     if args.world_size > 1:
-        torch.distributed.init_process_group(
-            backend='nccl',
-            init_method=args.dist_url,
-            world_size=args.world_size,
-            rank=args.rank
-        )
+        # When using torchrun, it sets all env vars automatically
+        # Just call init_process_group without manual init_method
+        torch.distributed.init_process_group(backend='nccl')
+        # Set device to local rank
+        torch.cuda.set_device(args.local_rank)
         return True
     return False
 
@@ -135,7 +141,7 @@ def main():
     
     # Setup logging
     setup_logging(level=logging.DEBUG if args.debug else logging.INFO)
-    logger = logging.getLogger(__name__)
+    logger = logging.getLogger("ngis")
     
     # Load configuration
     try:
@@ -181,12 +187,74 @@ def main():
     
     # Initialize trainer
     try:
-        trainer = NGISTrainer(config, is_distributed=is_distributed)
+        trainer = NGISTrainer(
+            config,
+            is_distributed=is_distributed,
+            rank=args.rank,
+            world_size=args.world_size
+        )
         logger.info("Initialized NGIS trainer successfully")
     except Exception as e:
         logger.error(f"Failed to initialize trainer: {e}")
         sys.exit(1)
-    
+
+    # Create dataloaders with proper train/val/test splits
+    try:
+        logger.info("Creating dataloaders with subject-level splits...")
+
+        # Get optional max_duration for fast testing
+        max_duration = getattr(config.data, 'max_duration', None)
+        
+        # Get splits configuration path
+        splits_config = getattr(config.data, 'splits_config', 'configs/splits.yaml')
+
+        # Create TRAIN dataloader - uses subjects from 'train' split
+        train_dataloader = create_training_dataloader(
+            data_path=config.data.data_path,
+            batch_size=config.data.batch_size,
+            segment_length=config.data.segment_length,
+            overlap=config.data.overlap,
+            augment=config.data.augment,  # Augment training data
+            num_workers=config.data.num_workers,
+            distributed=is_distributed,
+            rank=args.rank,
+            world_size=args.world_size,
+            channel_selection_strategy=config.data.channel_selection_strategy,
+            target_channels=config.data.channels,
+            channels=(config.data.channels if isinstance(config.data.channels, list) else None),
+            max_duration=max_duration,
+            split='train',  # FIXED: Use 'train' split
+            splits_config_path=splits_config
+        )
+
+        # Create VALIDATION dataloader - uses subjects from 'validation' split
+        # FIXED: No more data leakage - validation uses completely different subjects
+        val_dataloader = create_training_dataloader(
+            data_path=config.data.data_path,
+            batch_size=config.data.batch_size,
+            segment_length=config.data.segment_length,
+            overlap=config.data.overlap,
+            augment=False,  # No augmentation for validation
+            num_workers=config.data.num_workers,
+            distributed=is_distributed,
+            rank=args.rank,
+            world_size=args.world_size,
+            channel_selection_strategy=config.data.channel_selection_strategy,
+            target_channels=config.data.channels,
+            channels=(config.data.channels if isinstance(config.data.channels, list) else None),
+            max_duration=max_duration,
+            split='validation',  # FIXED: Use 'validation' split
+            splits_config_path=splits_config
+        )
+
+        # Set dataloaders on trainer
+        trainer.set_dataloaders(train_dataloader, val_dataloader)
+        logger.info(f"Created dataloaders: {len(train_dataloader)} train batches, {len(val_dataloader)} val batches")
+        logger.info("FIXED: Train and validation now use different subjects - proper generalization assessment!")
+    except Exception as e:
+        logger.error(f"Failed to create dataloaders: {e}")
+        sys.exit(1)
+
     # Dry run check
     if args.dry_run:
         logger.info("Dry run mode - exiting without training")

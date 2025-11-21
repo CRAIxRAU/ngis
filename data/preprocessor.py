@@ -147,12 +147,13 @@ class EEGPreprocessor:
     def _remove_artifacts(self, raw: mne.io.Raw) -> mne.io.Raw:
         """Remove artifacts using statistical methods."""
         logger.info("Removing artifacts...")
-        
+
         data = raw.get_data()
         n_channels, n_samples = data.shape
-        
-        # Calculate z-scores for each channel
-        z_scores = np.abs(zscore(data, axis=1))
+
+        # Calculate z-scores for each channel (handle constant channels)
+        z_scores = np.abs(zscore(data, axis=1, nan_policy='propagate'))
+        z_scores = np.nan_to_num(z_scores, nan=0.0, posinf=0.0, neginf=0.0)
         
         # Find samples that exceed threshold in any channel
         artifact_mask = np.any(z_scores > self.artifact_threshold, axis=0)
@@ -178,17 +179,40 @@ class EEGPreprocessor:
         return raw
     
     def _normalize_data(self, raw: mne.io.Raw) -> mne.io.Raw:
-        """Normalize EEG data."""
+        """Normalize EEG data with robust handling of constant channels."""
         logger.info("Normalizing EEG data...")
-        
+
         data = raw.get_data()
-        
-        # Z-score normalization per channel
-        data_normalized = zscore(data, axis=1)
-        
-        # Update the raw object
-        raw._data = data_normalized
-        
+        n_channels, n_samples = data.shape
+        normalized = np.zeros_like(data)
+
+        for ch_idx in range(n_channels):
+            ch_data = data[ch_idx, :]
+            ch_mean = np.mean(ch_data)
+            ch_std = np.std(ch_data)
+
+            if ch_std < 1e-8:
+                # Constant channel - interpolate from neighbors
+                logger.warning(f"Channel {ch_idx} is constant (std={ch_std:.2e}), interpolating from neighbors")
+                if 0 < ch_idx < n_channels - 1:
+                    # Average of neighbors
+                    prev_data = normalized[ch_idx-1, :] if ch_idx > 0 else ch_data - ch_mean
+                    next_idx = ch_idx + 1
+                    while next_idx < n_channels and np.std(data[next_idx, :]) < 1e-8:
+                        next_idx += 1
+                    if next_idx < n_channels:
+                        next_data = (data[next_idx, :] - np.mean(data[next_idx, :])) / (np.std(data[next_idx, :]) + 1e-8)
+                        normalized[ch_idx, :] = (prev_data + next_data) / 2
+                    else:
+                        normalized[ch_idx, :] = ch_data - ch_mean
+                else:
+                    # Edge channel - just center it
+                    normalized[ch_idx, :] = ch_data - ch_mean
+            else:
+                # Normal normalization
+                normalized[ch_idx, :] = (ch_data - ch_mean) / ch_std
+
+        raw._data = normalized
         return raw
     
     def segment_data(

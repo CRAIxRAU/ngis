@@ -1,0 +1,58 @@
+# Dataset Configuration for HD-EEG Cognitive Tasks
+# OpenNeuro datasets ds003420 and ds003421
+
+dataset:
+  name: "HD-EEG-cognitive-tasks"
+  source: "openneuro"
+  datasets:
+    - "ds003420"  # naming/spelling tasks
+    - "ds003421"  # auditory/memory/rest tasks
+  
+  # Channel configuration
+  channels:
+    original: 256
+    target: 128
+    selection_strategy: "uniform_spatial"  # Options: uniform_spatial, standard_hd, roi_based, custom
+    
+  # Data paths
+  paths:
+    raw_data: "data/raw"
+    processed_data: "data/processed"
+    sample_data: "data/sample"
+    channel_maps: "data/channel_maps"
+    
+  # Download configuration
+  download:
+    method: "datalad"  # Options: datalad, direct
+    subjects_limit: null  # null for all subjects, number for subset
+    sample_subjects: 2  # Number of subjects for sample dataset
+    
+  # Data validation
+  validation:
+    check_integrity: true
+    verify_channels: true
+    spatial_coverage_threshold: 0.8
+    
+# Channel selection strategies
+channel_selection:
+  uniform_spatial:
+    description: "Select every 2nd electrode for uniform coverage"
+    method: "stride"
+    stride: 2
+    
+  standard_hd:
+    description: "64 standard 10-20 positions + 64 high-density"
+    method: "hybrid"
+    standard_channels: 64
+    hd_channels: 64
+    
+  roi_based:
+    description: "Maintain coverage across brain regions"
+    method: "region_balanced"
+    regions: ["frontal", "central", "parietal", "occipital", "temporal"]
+    channels_per_region: 25
+    
+  custom:
+    description: "User-defined channel list"
+    method: "explicit"
+    channel_list: []  # Will be populated by user

@@ -80,20 +80,23 @@ class CheckpointManager:
             filename = f"checkpoint_epoch_{epoch:03d}.pth"
         
         checkpoint_path = self.save_dir / filename
-        
-        # Save checkpoint
-        torch.save(checkpoint, checkpoint_path)
+
+        # Save checkpoint (convert Path to string for torch.save)
+        torch.save(checkpoint, str(checkpoint_path))
         
         # Update best model tracking
         if is_best or metric < self.best_metric:
             self.best_metric = metric
             self.best_checkpoint_path = checkpoint_path
-            
-            # Create symlink to best model
-            best_link = self.save_dir / "best_model.pth"
-            if best_link.exists():
-                best_link.unlink()
-            best_link.symlink_to(filename)
+
+            # Copy to best model (only if not already saved as best_model.pth)
+            if not is_best:
+                best_link = self.save_dir / "best_model.pth"
+                if best_link.exists():
+                    best_link.unlink()
+                # Use copy instead of symlink for Windows compatibility
+                import shutil
+                shutil.copy2(str(checkpoint_path), str(best_link))
         
         logger.info(f"Saved checkpoint: {checkpoint_path}")
         
@@ -113,7 +116,7 @@ class CheckpointManager:
             Loaded checkpoint dictionary or None if failed.
         """
         try:
-            checkpoint = torch.load(checkpoint_path, map_location='cpu')
+            checkpoint = torch.load(checkpoint_path, map_location='cpu', weights_only=False)
             logger.info(f"Loaded checkpoint: {checkpoint_path}")
             return checkpoint
         except Exception as e:

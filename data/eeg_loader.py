@@ -12,7 +12,9 @@ from typing import Dict, List, Optional, Tuple, Union
 import mne
 import numpy as np
 import pandas as pd
-from mne.io import read_raw_edf, read_raw_bdf, read_raw_fif
+from mne.io import read_raw_edf, read_raw_bdf, read_raw_fif, read_raw_brainvision, read_raw_eeglab
+
+from .channel_selection import ChannelSelector
 
 logger = logging.getLogger(__name__)
 
@@ -29,20 +31,37 @@ class EEGLoader:
         self,
         channels: Optional[List[str]] = None,
         sampling_rate: Optional[int] = None,
-        preload: bool = True
+        preload: bool = True,
+        channel_selection_strategy: Optional[str] = None,
+        target_channels: int = 128,
+        electrode_positions: Optional[Dict[str, Tuple[float, float, float]]] = None,
+        max_duration: Optional[float] = None
     ):
         """
         Initialize EEG loader.
-        
+
         Args:
             channels: List of channel names to load. If None, loads all channels.
             sampling_rate: Target sampling rate. If None, keeps original rate.
             preload: Whether to preload data into memory.
+            channel_selection_strategy: Strategy for channel selection ('uniform_spatial', 'standard_hd', 'roi_based', 'custom')
+            target_channels: Number of channels to select (default: 128)
+            electrode_positions: Dictionary of electrode positions for spatial strategies
+            max_duration: Maximum duration in seconds to load (for fast testing)
         """
         self.channels = channels
         self.sampling_rate = sampling_rate
         self.preload = preload
-        self.supported_formats = ['.edf', '.bdf', '.fif', '.set', '.cnt']
+        self.channel_selection_strategy = channel_selection_strategy
+        self.target_channels = target_channels
+        self.electrode_positions = electrode_positions
+        self.max_duration = max_duration
+        self.supported_formats = ['.edf', '.bdf', '.fif', '.set', '.cnt', '.vhdr']
+
+        # Initialize channel selector if strategy is provided
+        self.channel_selector = None
+        if channel_selection_strategy:
+            self.channel_selector = ChannelSelector(channel_selection_strategy)
     
     def load_file(self, file_path: Union[str, Path]) -> mne.io.Raw:
         """
@@ -77,66 +96,164 @@ class EEGLoader:
                 raw = read_raw_bdf(file_path, preload=self.preload)
             elif file_ext == '.fif':
                 raw = read_raw_fif(file_path, preload=self.preload)
+            elif file_ext == '.vhdr':
+                raw = read_raw_brainvision(file_path, preload=self.preload)
+            elif file_ext == '.set':
+                raw = read_raw_eeglab(file_path, preload=self.preload)
             else:
                 # For other formats, try MNE's generic reader
                 raw = mne.io.read_raw(file_path, preload=self.preload)
         except Exception as e:
             logger.error(f"Failed to load EEG file {file_path}: {e}")
             raise
-        
-        # Select channels if specified
-        if self.channels is not None:
+
+        # CRITICAL FIX: Drop channels that are effectively constant
+        # This robustly catches the problematic electrode (e.g., Channel 64),
+        # regardless of naming convention (E64, EEG 064, etc.).
+        try:
+            # Use a short initial window to avoid loading full recordings
+            sfreq = float(raw.info.get('sfreq', 1000.0))
+            window = int(min(raw.n_times, max(int(sfreq * 10), 1)))  # up to first 10s
+            data_chunk = raw.get_data(start=0, stop=window)
+            ch_stds = np.std(data_chunk, axis=1)
+            constant_idx = np.where(ch_stds < 1e-8)[0].tolist()
+            if constant_idx:
+                constant_names = [raw.ch_names[i] for i in constant_idx]
+                logger.warning(
+                    f"Dropping {len(constant_names)} constant channel(s): {constant_names}"
+                )
+                raw.drop_channels(constant_names)
+        except Exception as e:
+            logger.warning(f"Failed constant-channel check; proceeding without drop. Error: {e}")
+
+        # Apply channel selection strategy or explicit channels
+        if self.channel_selector is not None:
+            # Use channel selection strategy (e.g., 256→128 reduction)
+            all_channels = raw.ch_names
+            selected_channels = self.channel_selector.select_channels(
+                all_channels, 
+                self.electrode_positions, 
+                self.channels  # custom_channels for custom strategy
+            )
+            logger.info(f"Selected {len(selected_channels)} channels from {len(all_channels)} using {self.channel_selection_strategy}")
+            raw.pick_channels(selected_channels)
+        elif self.channels is not None:
+            # Use explicitly specified channels
             available_channels = raw.ch_names
             missing_channels = set(self.channels) - set(available_channels)
             if missing_channels:
                 logger.warning(f"Missing channels: {missing_channels}")
                 # Use only available channels
-                self.channels = [ch for ch in self.channels if ch in available_channels]
-            raw.pick_channels(self.channels)
+                valid_channels = [ch for ch in self.channels if ch in available_channels]
+                raw.pick_channels(valid_channels)
+            else:
+                raw.pick_channels(self.channels)
         
         # Resample if specified
         if self.sampling_rate is not None and self.sampling_rate != raw.info['sfreq']:
             logger.info(f"Resampling from {raw.info['sfreq']}Hz to {self.sampling_rate}Hz")
             raw.resample(self.sampling_rate)
-        
-        logger.info(f"Loaded EEG data: {raw.n_times} samples, {raw.n_channels} channels")
+
+        # Crop to max_duration if specified (for fast testing)
+        if self.max_duration is not None:
+            duration_sec = raw.n_times / raw.info['sfreq']
+            if duration_sec > self.max_duration:
+                logger.info(f"Cropping data from {duration_sec:.1f}s to {self.max_duration:.1f}s")
+                raw.crop(tmax=self.max_duration)
+
+        logger.info(f"Loaded EEG data: {raw.n_times} samples, {len(raw.ch_names)} channels")
         return raw
     
+    def load_electrode_positions_from_bids(self, electrodes_file: Union[str, Path]) -> Dict[str, Tuple[float, float, float]]:
+        """
+        Load electrode positions from BIDS electrodes.tsv file.
+        
+        Args:
+            electrodes_file: Path to electrodes.tsv file
+            
+        Returns:
+            Dictionary mapping channel names to (x, y, z) coordinates
+        """
+        if self.channel_selector:
+            return self.channel_selector.load_electrode_positions(electrodes_file)
+        else:
+            # Fallback implementation
+            electrodes_file = Path(electrodes_file)
+            if not electrodes_file.exists():
+                raise FileNotFoundError(f"Electrodes file not found: {electrodes_file}")
+            
+            df = pd.read_csv(electrodes_file, sep='\t')
+            positions = {}
+            for _, row in df.iterrows():
+                name = row['name']
+                x, y, z = row['x'], row['y'], row['z']
+                positions[name] = (x, y, z)
+            
+            logger.info(f"Loaded positions for {len(positions)} electrodes")
+            return positions
+    
     def load_directory(
-        self, 
+        self,
         data_dir: Union[str, Path],
-        file_pattern: str = "*.edf"
+        file_pattern: str = "*.set",
+        rank: int = 0,
+        world_size: int = 1,
+        split_subjects: Optional[set] = None
     ) -> Dict[str, mne.io.Raw]:
         """
-        Load all EEG files from a directory.
-        
+        Load EEG files from a directory, sharded by rank for distributed training.
+
         Args:
             data_dir: Directory containing EEG files.
             file_pattern: Glob pattern for file selection.
-            
+            rank: Process rank for distributed training (0 to world_size-1).
+            world_size: Total number of processes in distributed training.
+            split_subjects: Optional set of subject IDs to include (for train/val/test splits).
+                          If None, all subjects are included.
+
         Returns:
-            Dictionary mapping filenames to Raw objects.
+            Dictionary mapping filenames to Raw objects (only files for this rank).
         """
+        from utils.splits import get_subject_id_from_filename
+        
         data_dir = Path(data_dir)
         if not data_dir.exists():
             raise FileNotFoundError(f"Data directory not found: {data_dir}")
-        
-        files = list(data_dir.glob(file_pattern))
+
+        files = sorted(list(data_dir.glob(file_pattern)))
         if not files:
             raise ValueError(f"No files matching pattern '{file_pattern}' found in {data_dir}")
-        
-        logger.info(f"Found {len(files)} EEG files in {data_dir}")
-        
+
+        # Filter by split subjects if provided
+        if split_subjects is not None:
+            filtered_files = []
+            for file_path in files:
+                subject_id = get_subject_id_from_filename(file_path.name)
+                if subject_id in split_subjects:
+                    filtered_files.append(file_path)
+            logger.info(f"Filtered {len(files)} files -> {len(filtered_files)} files for subjects {sorted(split_subjects)}")
+            files = filtered_files
+
+        if not files:
+            logger.warning(f"No files found after split filtering")
+            return {}
+
+        # FIXED: Load ALL files on all ranks - DistributedSampler handles segment-level sharding
+        # File-level sharding causes imbalanced batch counts → NCCL deadlocks
+        files_for_rank = files  # All ranks load all files
+
+        logger.info(f"Rank {rank}/{world_size}: Found {len(files)} total files, loading ALL files (DistributedSampler handles sharding)")
+
         raw_data = {}
-        for file_path in files:
+        for file_path in files_for_rank:
             try:
                 raw = self.load_file(file_path)
                 raw_data[file_path.stem] = raw
             except Exception as e:
                 logger.error(f"Failed to load {file_path}: {e}")
                 continue
-        
-        logger.info(f"Successfully loaded {len(raw_data)} files")
+
+        logger.info(f"Rank {rank}: Successfully loaded {len(raw_data)} files")
         return raw_data
     
     def get_data_array(self, raw: mne.io.Raw) -> np.ndarray:
@@ -162,7 +279,7 @@ class EEGLoader:
             Dictionary containing EEG metadata.
         """
         info = {
-            'n_channels': raw.n_channels,
+            'n_channels': len(raw.ch_names),
             'n_samples': raw.n_times,
             'sampling_rate': raw.info['sfreq'],
             'duration': raw.n_times / raw.info['sfreq'],
@@ -187,8 +304,9 @@ class EEGLoader:
             return False
         
         # Check for reasonable number of channels
-        if raw.n_channels < 16 or raw.n_channels > 256:
-            logger.warning(f"Unusual number of channels: {raw.n_channels}")
+        n_channels = len(raw.ch_names)
+        if n_channels < 16 or n_channels > 256:
+            logger.warning(f"Unusual number of channels: {n_channels}")
             return False
         
         # Check for reasonable duration

@@ -1,0 +1,46 @@
+# Data Splits Configuration
+# Defines subject-level train/val/test splits
+# Subjects are identified by their numeric ID (e.g., sub-01 → 1, sub-02 → 2)
+
+# For 31 subjects: 20 train (64.5%), 6 val (19.4%), 5 test (16.1%)
+# All ranks load ALL subjects - DistributedSampler handles segment-level load balancing
+train:
+  - 1   # sub-01
+  - 2   # sub-02
+  - 3   # sub-03
+  - 4   # sub-04
+  - 5   # sub-05
+  - 6   # sub-06
+  - 7   # sub-07
+  - 8   # sub-08
+  - 9   # sub-09
+  - 10  # sub-10
+  - 11  # sub-11
+  - 12  # sub-12
+  - 13  # sub-13
+  - 14  # sub-14
+  - 15  # sub-15
+  - 16  # sub-16
+  - 17  # sub-17
+  - 18  # sub-18
+  - 19  # sub-19
+  - 20  # sub-20
+
+validation:
+  - 21  # sub-21
+  - 22  # sub-22
+  - 23  # sub-23
+  - 24  # sub-24
+  - 25  # sub-25
+  - 26  # sub-26
+
+test:
+  - 27  # sub-27
+  - 28  # sub-28
+  - 29  # sub-29
+  - 30  # sub-30
+  - 31  # sub-31
+
+# Note: If you have fewer subjects, the system will automatically
+# filter to only available subjects. Missing subjects are skipped gracefully.
+
